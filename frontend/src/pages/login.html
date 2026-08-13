@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student Login | ExamGuard Pro</title>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+  <body>
+    <main class="shell auth-shell">
+      <section class="panel">
+        <p class="eyebrow">Student access</p>
+        <h1>ExamGuard Pro</h1>
+        <p class="muted">Open your emailed exam invitation link to begin, or enter a PIN if your admin issued one.</p>
+
+        <form id="studentLoginForm">
+          <label>
+            Roll Number
+            <input name="roll_no" type="text" placeholder="ROLL001" required />
+          </label>
+          <label>
+            Student PIN
+            <input name="pin" type="password" minlength="6" maxlength="6" required />
+          </label>
+          <button type="submit">Login</button>
+        </form>
+
+        <div class="actions">
+          <a href="admin.html">Admin Login</a>
+        </div>
+        <p class="status" data-status>Waiting for login.</p>
+      </section>
+    </main>
+    <script src="../js/main.js"></script>
+  </body>
+</html>

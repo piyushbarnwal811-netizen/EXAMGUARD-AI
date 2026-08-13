@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin | ExamGuard Pro</title>
+    <link rel="stylesheet" href="../css/style.css" />
+  </head>
+  <body>
+    <header class="shell topbar">
+      <div>
+        <div class="brand">ExamGuard Pro</div>
+        <p class="muted">Admin dashboard and reports.</p>
+      </div>
+      <nav class="nav">
+        <a class="button button-secondary" href="login.html">Student Login</a>
+        <a class="button" href="../../public/index.html">Home</a>
+      </nav>
+    </header>
+
+    <main class="shell grid">
+      <section class="card">
+        <h2>Admin Login</h2>
+        <form id="adminLoginForm">
+          <label>
+            Username
+            <input name="username" type="text" value="admin" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" value="admin123" required />
+          </label>
+          <button type="submit">Login</button>
+        </form>
+        <p class="status" data-status>Waiting for admin login.</p>
+      </section>
+
+      <section class="card">
+        <h2>Upload Students</h2>
+        <p class="muted">Upload a sheet with name and email columns.</p>
+        <form id="csvUploadForm">
+          <label>
+            CSV or Excel File
+            <input id="studentsCsv" type="file" accept=".csv,.xlsx,.xlsm,.xls" />
+          </label>
+          <label class="check-row">
+            <input id="sendInvitesOnUpload" type="checkbox" />
+            Send invite emails after import
+          </label>
+          <button type="submit">Upload Students</button>
+        </form>
+        <div class="result-list" data-import-result></div>
+      </section>
+
+      <section class="card">
+        <h2>Contest Schedule</h2>
+        <form id="contestScheduleForm">
+          <label>
+            Contest Title
+            <input id="contestTitle" name="title" type="text" required />
+          </label>
+          <label>
+            Start Time
+            <input id="contestStartTime" name="start_time" type="datetime-local" required />
+          </label>
+          <label>
+            End Time
+            <input id="contestEndTime" name="end_time" type="datetime-local" required />
+          </label>
+          <label class="check-row">
+            <input id="contestPublished" type="checkbox" checked />
+            Published
+          </label>
+          <button type="submit">Save Schedule</button>
+        </form>
+        <div class="result-list" data-schedule-summary></div>
+      </section>
+
+      <section class="card wide-card">
+        <h2>Coding Question</h2>
+        <form id="codingProblemForm">
+          <div class="problem-form-grid">
+            <label>
+              Problem Title
+              <input id="problemTitle" name="title" type="text" required />
+            </label>
+            <label>
+              Statement
+              <textarea id="problemStatement" name="statement" rows="4" required></textarea>
+            </label>
+            <label>
+              Input Format
+              <textarea id="problemInputFormat" name="input_format" rows="3" required></textarea>
+            </label>
+            <label>
+              Output Format
+              <textarea id="problemOutputFormat" name="output_format" rows="3" required></textarea>
+            </label>
+            <label>
+              Constraints
+              <textarea id="problemConstraints" name="constraints" rows="3" required></textarea>
+            </label>
+          </div>
+
+          <fieldset class="language-picker">
+            <legend>Enabled Languages</legend>
+            <label class="check-row">
+              <input id="enablePython" type="checkbox" checked />
+              Python
+            </label>
+            <label class="check-row">
+              <input id="enableCpp" type="checkbox" checked />
+              C++
+            </label>
+            <label class="check-row">
+              <input id="enableJava" type="checkbox" checked />
+              Java
+            </label>
+          </fieldset>
+
+          <div class="starter-grid">
+            <label data-language-field="python">
+              Python Starter
+              <textarea id="starterPython" name="starter_code_python" rows="7"></textarea>
+            </label>
+            <label data-language-field="cpp">
+              C++ Starter
+              <textarea id="starterCpp" name="starter_code_cpp" rows="7"></textarea>
+            </label>
+            <label data-language-field="java">
+              Java Starter
+              <textarea id="starterJava" name="starter_code_java" rows="7"></textarea>
+            </label>
+          </div>
+
+          <div class="test-case-list" data-test-cases></div>
+          <button type="submit">Save Coding Question</button>
+        </form>
+        <div class="result-list" data-problem-summary></div>
+      </section>
+
+      <section class="card wide-card">
+        <h2>Exam History & Reports</h2>
+        <p class="muted">Send invite links, generate student PINs, and download reports for the exact exam.</p>
+        <div class="actions">
+          <button type="button" data-send-invites>Send Invites</button>
+          <button type="button" data-generate-pins>Generate PINs</button>
+          <button type="button" class="button-secondary" data-refresh-exam-history>Refresh History</button>
+          <button type="button" class="button-secondary" data-download-report>Download All</button>
+        </div>
+        <div class="table-wrap report-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Exam</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Status</th>
+                <th>Submissions</th>
+                <th>Report</th>
+              </tr>
+            </thead>
+            <tbody data-exam-history>
+              <tr>
+                <td colspan="6">Login to load exam history.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="../js/main.js"></script>
+  </body>
+</html>
