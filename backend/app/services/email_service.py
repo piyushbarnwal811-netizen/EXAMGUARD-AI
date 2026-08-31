@@ -78,6 +78,8 @@ def validate_email_settings() -> None:
         raise EmailConfigurationError("SMTP_PASSWORD must not be empty.")
 
 
+import time
+
 def send_email(to_email: str, subject: str, body: str) -> None:
     settings = _require_email_settings()
     smtp_user = _clean_email_address(settings.SMTP_USER)
@@ -96,35 +98,42 @@ def send_email(to_email: str, subject: str, body: str) -> None:
     use_ssl = settings.SMTP_USE_SSL or settings.SMTP_PORT == 465
     context = ssl.create_default_context()
 
-    try:
-        if use_ssl:
-            smtp = smtplib.SMTP_SSL(
-                settings.SMTP_HOST,
-                settings.SMTP_PORT,
-                timeout=settings.SMTP_TIMEOUT_SECONDS,
-                context=context,
-            )
-        else:
-            smtp = smtplib.SMTP(
-                settings.SMTP_HOST,
-                settings.SMTP_PORT,
-                timeout=settings.SMTP_TIMEOUT_SECONDS,
-            )
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if use_ssl:
+                smtp = smtplib.SMTP_SSL(
+                    settings.SMTP_HOST,
+                    settings.SMTP_PORT,
+                    timeout=settings.SMTP_TIMEOUT_SECONDS,
+                    context=context,
+                )
+            else:
+                smtp = smtplib.SMTP(
+                    settings.SMTP_HOST,
+                    settings.SMTP_PORT,
+                    timeout=settings.SMTP_TIMEOUT_SECONDS,
+                )
 
-        with smtp as server:
-            server.ehlo()
-            if not use_ssl and settings.SMTP_STARTTLS:
-                server.starttls(context=context)
+            with smtp as server:
                 server.ehlo()
-            server.login(smtp_user, smtp_password)
-            server.send_message(message)
-    except smtplib.SMTPAuthenticationError as exc:
-        raise EmailDeliveryError(
-            "SMTP authentication failed. Check SMTP_USER and SMTP_PASSWORD; "
-            "for Gmail, use an app password."
-        ) from exc
-    except (smtplib.SMTPException, OSError) as exc:
-        raise EmailDeliveryError(f"SMTP delivery failed: {exc}") from exc
+                if not use_ssl and settings.SMTP_STARTTLS:
+                    server.starttls(context=context)
+                    server.ehlo()
+                server.login(smtp_user, smtp_password)
+                server.send_message(message)
+            return  # success
+        except smtplib.SMTPAuthenticationError as exc:
+            # auth errors are not transient
+            raise EmailDeliveryError(
+                "SMTP authentication failed. Check SMTP_USER and SMTP_PASSWORD; "
+                "for Gmail, use an app password."
+            ) from exc
+        except (smtplib.SMTPException, OSError) as exc:
+            if attempt == max_attempts:
+                raise EmailDeliveryError(f"SMTP delivery failed after {max_attempts} attempts: {exc}") from exc
+            # transient network error – wait a bit and retry
+            time.sleep(1.5 * attempt)
 
 
 def send_bulk_emails(recipients: Iterable[str], subject: str, body: str) -> int:
