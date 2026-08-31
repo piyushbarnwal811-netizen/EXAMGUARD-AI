@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     SMTP_STARTTLS: bool = True
     SMTP_TIMEOUT_SECONDS: int = 20
-    FRONTEND_EXAM_URL: str = "http://127.0.0.1:8000/frontend/src/pages/exam.html"
+    FRONTEND_EXAM_URL: str = "https://examguard-ai.vercel.app/exam.html?autolaunch=true"
     EXAM_INVITE_EXPIRE_HOURS: int = 72
 
     PISTON_API_URL: str = "https://emkc.org/api/v2/piston/execute"

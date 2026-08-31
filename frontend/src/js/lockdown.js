@@ -5,6 +5,46 @@ let examSubmitted = false;
 let lastSecurityEventAt = new Map();
 let resumeTimer = null;
 
+function checkAutoLaunchSeb() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("autolaunch") !== "true") return;
+
+  // Attempt to launch SEB via custom protocol
+  const sebUrl = "seb://examguard-ai-317p.onrender.com/api/download/seb-config";
+  window.location.href = sebUrl;
+
+  // Fallback if protocol not handled
+  setTimeout(() => {
+    // If still on page, show modal
+    if (document.querySelector("[data-seb-modal]")) return;
+    const modal = document.createElement("section");
+    modal.dataset.sebModal = "true";
+    modal.className = "seb-modal-overlay";
+    modal.innerHTML = `
+      <div class="seb-modal" role="dialog" aria-modal="true" aria-labelledby="seb-modal-title">
+        <h2 id="seb-modal-title">Safe Exam Browser Required</h2>
+        <p>This exam can only be taken inside the Safe Exam Browser (SEB).</p>
+        <p>It looks like SEB is not installed or the protocol handler didn't launch.</p>
+        <div class="seb-modal-actions">
+          <a
+            class="button button-primary"
+            href="https://github.com/SafeExamBrowser/seb-win-refactor/releases/download/v3.7.0.683/SEB_3.7.0.683_Setup.exe"
+            target="_blank"
+            rel="noopener"
+          >
+            Download SEB Installer
+          </a>
+          <button type="button" class="button button-secondary" data-seb-retry>Launch Exam</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector("[data-seb-retry]")?.addEventListener("click", () => {
+      window.location.href = sebUrl;
+    });
+  }, 2500);
+}
+
 function lockdownAuthHeaders() {
   const token = localStorage.getItem("examguard_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -306,6 +346,7 @@ function setExamActive(active) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  checkAutoLaunchSeb();
   setLockdownStatus("Fullscreen inactive");
   document.querySelector("[data-lockdown-start]")?.addEventListener("click", startLockdown);
 });
