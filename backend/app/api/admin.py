@@ -610,34 +610,43 @@ async def send_student_invites(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ) -> InviteBatchResult:
-    result = await db.execute(select(Student).order_by(Student.roll_no))
-    students = result.scalars().all()
-    if not students:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Upload students before sending invites.",
-        )
-
-    _ensure_invite_email_configured()
-    invite_jobs = _queue_invites(students)
     try:
+        result = await db.execute(select(Student).order_by(Student.roll_no))
+        students = result.scalars().all()
+        if not students:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload students before sending invites.",
+            )
+
+        _ensure_invite_email_configured()
+        invite_jobs = _queue_invites(students)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Invite generation conflicts with existing database constraints.",
+            ) from exc
+
+        invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
         await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
+
+        return InviteBatchResult(
+            total_students=len(students),
+            invites_sent=invites_sent,
+            invites_failed=len(failed_invites),
+            failed_invites=failed_invites,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Log exc if logger available
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Invite generation conflicts with existing database constraints.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send invites: {exc}",
         ) from exc
-
-    invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
-    await db.commit()
-
-    return InviteBatchResult(
-        total_students=len(students),
-        invites_sent=invites_sent,
-        invites_failed=len(failed_invites),
-        failed_invites=failed_invites,
-    )
 
 
 @router.post("/upload-csv", response_model=CsvUploadResult)
