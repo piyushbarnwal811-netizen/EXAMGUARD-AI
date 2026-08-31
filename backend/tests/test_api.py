@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app.api import contest as contest_api
-from app.core.security import hash_secret
+from app.core.security import hash_secret, verify_secret
 from app.db.models import CodingContest, CodingTestCase, ExamLog, Student
 from app.db.session import AsyncSessionLocal
 from app.services import coding_executor
@@ -54,6 +54,17 @@ async def _activate_contest() -> None:
         await db.commit()
 
 
+async def _end_contest() -> None:
+    now = datetime.now(timezone.utc)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(CodingContest).order_by(CodingContest.id.desc()))
+        contest = result.scalars().first()
+        contest.start_time = now - timedelta(hours=1)
+        contest.end_time = now - timedelta(minutes=1)
+        contest.is_published = True
+        await db.commit()
+
+
 async def _latest_log(event_type: str) -> ExamLog | None:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -81,6 +92,30 @@ def _admin_token(client) -> str:
     )
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+def _generated_question_payload(
+    title: str,
+    statement: str,
+    sample_input: str,
+    sample_output: str,
+) -> dict[str, object]:
+    return {
+        "title": title,
+        "statement": statement,
+        "sample_input": sample_input,
+        "sample_output": sample_output,
+        "test_cases": [
+            {
+                "input_data": sample_input if index == 0 else f"{sample_input}\ncase {index + 1}",
+                "expected_output": sample_output
+                if index == 0
+                else f"{sample_output}\ncase {index + 1}",
+                "is_visible": index < 2,
+            }
+            for index in range(10)
+        ],
+    }
 
 
 def test_admin_and_student_login_create_session(client):
@@ -130,6 +165,81 @@ def test_invite_verification_starts_exam_session(client):
     assert body["session_id"] is not None
 
 
+def test_send_invites_generates_pin_and_email(client, monkeypatch):
+    from app.api import admin as admin_api
+
+    token = _admin_token(client)
+    run(
+        _create_student(
+            roll_no="MAIL001",
+            email="mail.student@example.com",
+            pin=None,
+        )
+    )
+    sent_messages = []
+
+    def fake_send_invite_email(to_email, student_name, invite_link, pin, expires_at):
+        sent_messages.append(
+            {
+                "to_email": to_email,
+                "student_name": student_name,
+                "invite_link": invite_link,
+                "pin": pin,
+                "expires_at": expires_at,
+            }
+        )
+
+    monkeypatch.setattr(admin_api, "validate_email_settings", lambda: None)
+    monkeypatch.setattr(admin_api, "send_exam_invite_email", fake_send_invite_email)
+
+    response = client.post(
+        "/api/admin/send-invites",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["invites_sent"] == 1
+    assert body["invites_failed"] == 0
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["to_email"] == "mail.student@example.com"
+    assert len(sent_messages[0]["pin"]) == 6
+    assert "invite=" in sent_messages[0]["invite_link"]
+
+    async def fetch_student() -> Student:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Student).where(Student.roll_no == "MAIL001")
+            )
+            return result.scalar_one()
+
+    student = run(fetch_student())
+    assert student.secret_pin
+    assert verify_secret(sent_messages[0]["pin"], student.secret_pin)
+    assert student.invite_token_hash
+    assert student.is_pin_used is False
+
+
+def test_email_settings_are_sanitized_for_gmail_app_passwords():
+    from app.services.email_service import (
+        _clean_email_address,
+        _clean_smtp_password,
+        _smtp_from_header,
+    )
+
+    assert _clean_email_address("admin.sender@gmail.com          # personal Gmail") == (
+        "admin.sender@gmail.com"
+    )
+    assert _clean_smtp_password("abcd efgh ijkl mnop          # app password") == (
+        "abcdefghijklmnop"
+    )
+    assert _smtp_from_header(
+        "ExamGuard <different@gmail.com>",
+        "admin.sender@gmail.com",
+        "smtp.gmail.com",
+    ) == "ExamGuard <admin.sender@gmail.com>"
+
+
 def test_admin_exam_history_lists_scheduled_exams(client):
     token = _admin_token(client)
 
@@ -144,6 +254,117 @@ def test_admin_exam_history_lists_scheduled_exams(client):
     assert body[0]["title"] == "ExamGuard Pro Coding Contest"
     assert body[0]["total_submissions"] == 0
     assert body[0]["students_submitted"] == 0
+
+
+def test_admin_can_generate_ai_questions(client, monkeypatch):
+    from app.api import questions as questions_api
+
+    token = _admin_token(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.6-flash")
+    monkeypatch.setenv("GEMINI_REMOTE_ENABLED", "true")
+
+    def fake_generate(api_key, payload, generation_id, model_name, timeout_seconds):
+        assert api_key == "test-gemini-key"
+        assert payload.topic == "Python OOP"
+        assert payload.difficulty == "Medium"
+        assert payload.count == 2
+        assert generation_id
+        assert model_name == "gemini-3.6-flash"
+        assert timeout_seconds >= 30
+        return questions_api._parse_questions(
+            json.dumps(
+                [
+                    _generated_question_payload(
+                        "Class Construction",
+                        "Create a class and instantiate it.",
+                        "Student Alice",
+                        "Alice",
+                    ),
+                    _generated_question_payload(
+                        "Inheritance Basics",
+                        "Extend a base class and override a method.",
+                        "Dog speak",
+                        "Bark",
+                    ),
+                ]
+            )
+        )
+
+    monkeypatch.setattr(questions_api, "_generate_questions_with_gemini", fake_generate)
+
+    response = client.post(
+        "/api/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"topic": "Python OOP", "difficulty": "medium", "count": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["topic"] == "Python OOP"
+    assert body["difficulty"] == "Medium"
+    assert body["count"] == 2
+    assert body["source"] == "gemini"
+    assert body["generation_id"]
+    assert [item["title"] for item in body["questions"]] == [
+        "Class Construction",
+        "Inheritance Basics",
+    ]
+    assert all(len(item["test_cases"]) == 10 for item in body["questions"])
+
+
+def test_admin_requires_gemini_key_for_ai_questions(client, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import questions as questions_api
+
+    token = _admin_token(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setattr(
+        questions_api,
+        "get_settings",
+        lambda: SimpleNamespace(GEMINI_API_KEY="", GEMINI_REMOTE_ENABLED=True),
+    )
+
+    response = client.post(
+        "/api/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"topic": "Stacks", "difficulty": "easy", "count": 2},
+    )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert "Gemini API key is not configured" in body["detail"]
+
+
+def test_admin_ai_questions_fallback_when_gemini_fails(client, monkeypatch):
+    from app.api import questions as questions_api
+
+    token = _admin_token(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("GEMINI_REMOTE_ENABLED", "true")
+
+    def fail_generate(*_args, **_kwargs):
+        raise questions_api.GeminiResponseError("invalid Gemini response")
+
+    monkeypatch.setattr(questions_api, "_generate_questions_with_gemini", fail_generate)
+
+    response = client.post(
+        "/api/questions/generate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"topic": "Arrays", "difficulty": "easy", "count": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "local_fallback"
+    assert body["count"] == 2
+    assert len(body["questions"]) == 2
+    assert all(len(item["test_cases"]) == 10 for item in body["questions"])
+    assert all(
+        sum(1 for case in item["test_cases"] if case["is_visible"]) == 2
+        for item in body["questions"]
+    )
 
 
 def test_admin_excel_upload_imports_students_without_email(client):
@@ -323,6 +544,54 @@ def test_saved_draft_can_be_auto_submitted(client, monkeypatch):
     assert body["submitted"] is True
     assert body["score"] == 100
     assert body["submission_id"] is not None
+
+
+def test_contest_status_shows_final_marks_after_exam_ends(client, monkeypatch):
+    async def fake_execute(source_code, language, test_cases):
+        return [
+            ExecutionCaseResult(
+                case_number=test_case.sort_order,
+                is_visible=test_case.is_visible,
+                passed=True,
+                input_data=test_case.input_data,
+                expected_output=test_case.expected_output,
+                actual_output=test_case.expected_output,
+                error_logs="",
+            )
+            for test_case in test_cases
+        ]
+
+    monkeypatch.setattr(contest_api, "execute_code_against_cases", fake_execute)
+    run(_create_student())
+    token_data = _student_token(client)
+    run(_activate_contest())
+    headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+
+    status_response = client.get("/api/contest/status", headers=headers)
+    assert status_response.status_code == 200
+    problem_id = status_response.json()["problem"]["id"]
+
+    submit_response = client.post(
+        "/api/contest/submit",
+        headers=headers,
+        json={
+            "problem_id": problem_id,
+            "language": "python",
+            "source_code": "print('final marks')",
+            "auto_submitted": False,
+        },
+    )
+    assert submit_response.status_code == 200
+
+    run(_end_contest())
+    ended_response = client.get("/api/contest/status", headers=headers)
+
+    assert ended_response.status_code == 200
+    body = ended_response.json()
+    assert body["status"] == "ENDED"
+    assert body["final_result"]["score"] == 100
+    assert body["final_result"]["passed_cases"] == 10
+    assert body["final_result"]["total_cases"] == 10
 
 
 def test_tracking_event_is_timestamped_and_session_scoped(client):

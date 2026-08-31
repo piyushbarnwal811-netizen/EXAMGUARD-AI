@@ -35,6 +35,7 @@
         <button type="button" data-camera-start>Start Camera</button>
         <button type="button" class="button-secondary" data-camera-stop disabled>Stop Camera</button>
         <button type="button" data-location-send>Send Location</button>
+        <button type="button" id="downloadSafeBrowser" class="button-secondary">Download Safe Browser</button>
       </nav>
     </header>
 
@@ -126,6 +127,7 @@
       <section class="contest-workspace" data-workspace hidden>
         <aside class="contest-panel problem-pane">
           <p class="eyebrow">Problem</p>
+          <div class="student-problem-tabs" data-problem-tabs></div>
           <h2 data-problem-title>Loading...</h2>
           <div class="problem-copy" data-problem-body></div>
           <div class="sample-list" data-visible-samples></div>
@@ -177,5 +179,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.49.0/min/vs/loader.min.js"></script>
     <script src="../js/coding.js"></script>
     <script src="../js/lockdown.js"></script>
+    <script>
+      document.getElementById('downloadSafeBrowser')?.addEventListener('click', () => {
+        window.location.href = '/api/download/safe-browser';
+      });
+    </script>
   </body>
 </html>

@@ -1,18 +1,16 @@
 function resolveApiBase() {
   const configured = localStorage.getItem("examguard_api_base");
   if (configured) return configured.replace(/\/$/, "");
-  if (
-    window.location.protocol.startsWith("http") &&
-    window.location.pathname.startsWith("/frontend/")
-  ) {
-    return `${window.location.origin}/api`;
-  }
-  return "http://127.0.0.1:8000/api";
+  // Use relative path so it works on any origin
+  return "/api";
 }
 
 const API_BASE = resolveApiBase();
 window.EXAMGUARD_API_BASE = API_BASE;
 let studentReadyNotified = false;
+let generatedAiQuestions = [];
+let adminProblemDrafts = [];
+let activeProblemIndex = 0;
 
 const qs = (selector) => document.querySelector(selector);
 
@@ -81,7 +79,7 @@ function errorMessageFromPayload(payload, fallback = "Request failed") {
 }
 
 function backendUnavailableMessage() {
-  return `Backend unavailable at ${API_BASE}. Start FastAPI and open http://127.0.0.1:8000/frontend/src/pages/admin.html.`;
+  return `Backend unavailable at ${API_BASE}. Ensure the FastAPI server is running and reachable.`;
 }
 
 async function apiFetch(path, options = {}) {
@@ -264,10 +262,8 @@ async function handleAdminLogin(event) {
       password: form.password.value,
     });
     saveToken(data.access_token);
-    setStatus("Admin login successful.", "success");
-    await loadContestSchedule();
-    await loadCodingProblem();
-    await loadExamHistory();
+    await initializeAdminDashboard();
+    setStatus("Admin login successful. Dashboard ready.", "success");
   } catch (error) {
     setStatus(error.message, "warning");
   }
@@ -344,8 +340,8 @@ async function submitAnswer(event) {
   }
 }
 
-function renderImportResult(data) {
-  const holder = qs("[data-import-result]");
+function renderImportResult(data, targetSelector = "[data-import-result]") {
+  const holder = qs(targetSelector);
   if (!holder || !data) return;
 
   const failures = data.failed_invites || [];
@@ -506,7 +502,7 @@ async function generatePins() {
 async function sendInvites() {
   try {
     const data = await postJson("/admin/send-invites", {});
-    renderImportResult(data);
+    renderImportResult(data, "[data-invite-result]");
     setStatus(
       `Invites sent: ${data.invites_sent}, failed: ${data.invites_failed}.`,
       data.invites_failed ? "warning" : "success"
@@ -546,7 +542,25 @@ function toDatetimeLocal(value) {
   return date.toISOString().slice(0, 16);
 }
 
-function renderSchedule(data) {
+function defaultContestSchedule() {
+  const start = new Date();
+  start.setMinutes(start.getMinutes() + 60);
+  start.setSeconds(0, 0);
+  const end = new Date(start);
+  end.setHours(end.getHours() + 1);
+
+  return {
+    title: "ExamGuard Pro Coding Contest",
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
+    is_published: false,
+    server_time: "",
+    status: "Not saved",
+    remaining_seconds: null,
+  };
+}
+
+function renderSchedule(data, options = {}) {
   const titleInput = qs("#contestTitle");
   const startInput = qs("#contestStartTime");
   const endInput = qs("#contestEndTime");
@@ -560,18 +574,41 @@ function renderSchedule(data) {
   publishedInput.checked = Boolean(data.is_published);
 
   if (summary) {
+    const serverTime = data.server_time ? new Date(data.server_time) : null;
+    const serverTimeText = serverTime && !Number.isNaN(serverTime.getTime())
+      ? serverTime.toLocaleString()
+      : "";
+    const remainingSeconds = Number(data.remaining_seconds);
     summary.innerHTML = `
-      <p><strong>Status:</strong> ${escapeHtml(data.status)}</p>
-      <p><strong>Server time:</strong> ${escapeHtml(new Date(data.server_time).toLocaleString())}</p>
-      <p><strong>Remaining seconds:</strong> ${Number(data.remaining_seconds || 0)}</p>
+      <p><strong>Status:</strong> ${escapeHtml(options.statusLabel || data.status || "Not saved")}</p>
+      ${options.message ? `<p>${escapeHtml(options.message)}</p>` : ""}
+      ${serverTimeText ? `<p><strong>Server time:</strong> ${escapeHtml(serverTimeText)}</p>` : ""}
+      ${Number.isFinite(remainingSeconds) ? `<p><strong>Remaining seconds:</strong> ${remainingSeconds}</p>` : ""}
     `;
   }
 }
 
 async function loadContestSchedule() {
-  if (!qs("#contestScheduleForm") || !getToken()) return;
-  const data = await getJson("/contest/schedule");
-  renderSchedule(data);
+  if (!qs("#contestScheduleForm")) return null;
+  if (!getToken()) {
+    renderSchedule(defaultContestSchedule(), {
+      statusLabel: "Draft",
+      message: "Login as admin before saving this schedule.",
+    });
+    return null;
+  }
+
+  try {
+    const data = await getJson("/contest/schedule");
+    renderSchedule(data);
+    return data;
+  } catch (error) {
+    renderSchedule(defaultContestSchedule(), {
+      statusLabel: "Not saved",
+      message: "No schedule is saved yet. Review this draft and save it to create the contest.",
+    });
+    return null;
+  }
 }
 
 async function saveContestSchedule(event) {
@@ -586,10 +623,21 @@ async function saveContestSchedule(event) {
     return;
   }
 
+  const startDate = new Date(startTime);
+  const endDate = new Date(endTime);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    setStatus("Please enter a valid contest time window.", "warning");
+    return;
+  }
+  if (endDate <= startDate) {
+    setStatus("End time must be after start time.", "warning");
+    return;
+  }
+
   const data = await putJson("/contest/schedule", {
     title,
-    start_time: new Date(startTime).toISOString(),
-    end_time: new Date(endTime).toISOString(),
+    start_time: startDate.toISOString(),
+    end_time: endDate.toISOString(),
     is_published: isPublished,
   });
   renderSchedule(data);
@@ -650,6 +698,165 @@ function defaultProblemData() {
       is_visible,
     })),
   };
+}
+
+function genericStarterCode() {
+  return {
+    starter_code_python:
+      "import sys\n\n" +
+      "def solve():\n" +
+      "    data = sys.stdin.read()\n" +
+      "    # Write your solution here.\n" +
+      "    pass\n\n" +
+      "if __name__ == \"__main__\":\n" +
+      "    solve()\n",
+    starter_code_cpp:
+      "#include <bits/stdc++.h>\n" +
+      "using namespace std;\n\n" +
+      "int main() {\n" +
+      "    ios::sync_with_stdio(false);\n" +
+      "    cin.tie(nullptr);\n" +
+      "    // Write your solution here.\n" +
+      "    return 0;\n" +
+      "}\n",
+    starter_code_java:
+      "import java.io.*;\n" +
+      "import java.util.*;\n\n" +
+      "public class Main {\n" +
+      "    public static void main(String[] args) throws Exception {\n" +
+      "        // Write your solution here.\n" +
+      "    }\n" +
+      "}\n",
+  };
+}
+
+function normalizeTestCases(testCases = []) {
+  const defaults = defaultProblemData().test_cases;
+  return Array.from({ length: 10 }, (_item, index) => {
+    const existing = testCases[index] || defaults[index];
+    return {
+      sort_order: index + 1,
+      input_data: existing?.input_data || "",
+      expected_output: existing?.expected_output || "",
+      is_visible: Boolean(existing?.is_visible),
+    };
+  });
+}
+
+function normalizeProblemDraft(problem = null, index = 0) {
+  const base = defaultProblemData();
+  const data = problem || base;
+  return {
+    ...base,
+    ...data,
+    id: data.id || null,
+    order_index: Number(data.order_index || index + 1),
+    enabled_languages: Array.isArray(data.enabled_languages) && data.enabled_languages.length
+      ? data.enabled_languages
+      : ["python", "cpp", "java"],
+    test_cases: normalizeTestCases(data.test_cases || []),
+  };
+}
+
+function readProblemFormDraft() {
+  const testCases = Array.from({ length: 10 }, (_item, index) => ({
+    sort_order: index + 1,
+    input_data: qs(`[data-case-input="${index}"]`)?.value || "",
+    expected_output: qs(`[data-case-output="${index}"]`)?.value || "",
+    is_visible: Boolean(qs(`[data-case-visible="${index}"]`)?.checked),
+  }));
+  const enabledLanguages = [];
+  if (qs("#enablePython")?.checked) enabledLanguages.push("python");
+  if (qs("#enableCpp")?.checked) enabledLanguages.push("cpp");
+  if (qs("#enableJava")?.checked) enabledLanguages.push("java");
+
+  return {
+    id: adminProblemDrafts[activeProblemIndex]?.id || null,
+    order_index: activeProblemIndex + 1,
+    title: qs("#problemTitle")?.value || "",
+    statement: qs("#problemStatement")?.value || "",
+    input_format: qs("#problemInputFormat")?.value || "",
+    output_format: qs("#problemOutputFormat")?.value || "",
+    constraints: qs("#problemConstraints")?.value || "",
+    starter_code_python: qs("#starterPython")?.value || "",
+    starter_code_cpp: qs("#starterCpp")?.value || "",
+    starter_code_java: qs("#starterJava")?.value || "",
+    enabled_languages: enabledLanguages,
+    test_cases: testCases,
+  };
+}
+
+function syncActiveProblemDraft() {
+  if (!qs("#codingProblemForm") || !adminProblemDrafts.length) return;
+  adminProblemDrafts[activeProblemIndex] = normalizeProblemDraft(
+    readProblemFormDraft(),
+    activeProblemIndex
+  );
+}
+
+function renderProblemBank() {
+  const holder = qs("[data-problem-bank]");
+  if (!holder) return;
+
+  holder.innerHTML = adminProblemDrafts
+    .map((problem, index) => {
+      const visibleCount = (problem.test_cases || []).filter((item) => item.is_visible).length;
+      const title = problem.title?.trim() || `Question ${index + 1}`;
+      const activeClass = index === activeProblemIndex ? " active" : "";
+      return `
+        <button type="button" class="problem-bank-item${activeClass}" data-select-problem="${index}">
+          <span>Q${index + 1}</span>
+          <strong>${escapeHtml(title)}</strong>
+          <small>${(problem.test_cases || []).length} cases / ${visibleCount} visible</small>
+        </button>
+      `;
+    })
+    .join("");
+
+  const removeButton = qs("[data-remove-problem]");
+  if (removeButton) removeButton.disabled = adminProblemDrafts.length <= 1;
+}
+
+function setActiveProblemDraft(index) {
+  if (index < 0 || index >= adminProblemDrafts.length) return;
+  syncActiveProblemDraft();
+  activeProblemIndex = index;
+  setProblemForm(adminProblemDrafts[activeProblemIndex]);
+  renderProblemBank();
+}
+
+function setProblemDrafts(problems = []) {
+  adminProblemDrafts = (Array.isArray(problems) && problems.length ? problems : [defaultProblemData()])
+    .map((problem, index) => normalizeProblemDraft(problem, index));
+  activeProblemIndex = Math.min(activeProblemIndex, adminProblemDrafts.length - 1);
+  setProblemForm(adminProblemDrafts[activeProblemIndex]);
+  renderProblemBank();
+}
+
+function addProblemDraft(problem = null) {
+  syncActiveProblemDraft();
+  const draft = normalizeProblemDraft(problem || {
+    ...defaultProblemData(),
+    title: `Question ${adminProblemDrafts.length + 1}`,
+  }, adminProblemDrafts.length);
+  adminProblemDrafts.push(draft);
+  activeProblemIndex = adminProblemDrafts.length - 1;
+  setProblemForm(draft);
+  renderProblemBank();
+  qs("#problemTitle")?.focus();
+}
+
+function removeActiveProblemDraft() {
+  if (adminProblemDrafts.length <= 1) {
+    setStatus("At least one coding question is required.", "warning");
+    return;
+  }
+
+  adminProblemDrafts.splice(activeProblemIndex, 1);
+  activeProblemIndex = Math.min(activeProblemIndex, adminProblemDrafts.length - 1);
+  setProblemForm(adminProblemDrafts[activeProblemIndex]);
+  renderProblemBank();
+  setStatus("Question removed. Save to update the contest.", "success");
 }
 
 function renderTestCaseInputs(testCases = []) {
@@ -737,72 +944,286 @@ function renderProblemSummary(data) {
   const holder = qs("[data-problem-summary]");
   if (!holder || !data) return;
 
-  const visibleCount = (data.test_cases || []).filter((item) => item.is_visible).length;
-  const enabled = Array.isArray(data.enabled_languages)
-    ? data.enabled_languages
+  const problems = Array.isArray(data) ? data : [data];
+  const active = problems[activeProblemIndex] || problems[0] || {};
+  const totalCases = problems.reduce(
+    (total, problem) => total + (problem.test_cases || []).length,
+    0
+  );
+  const visibleCount = problems.reduce(
+    (total, problem) => total + (problem.test_cases || []).filter((item) => item.is_visible).length,
+    0
+  );
+  const enabled = Array.isArray(active.enabled_languages)
+    ? active.enabled_languages
     : ["python", "cpp", "java"];
   holder.innerHTML = `
-    <p><strong>Problem:</strong> ${escapeHtml(data.title)}</p>
+    <p><strong>Questions:</strong> ${problems.length}</p>
+    <p><strong>Selected:</strong> ${escapeHtml(active.title || "Question")}</p>
     <p><strong>Enabled languages:</strong> ${escapeHtml(enabled.join(", "))}</p>
-    <p><strong>Test cases:</strong> ${(data.test_cases || []).length} total / ${visibleCount} visible</p>
+    <p><strong>Test cases:</strong> ${totalCases} total / ${visibleCount} visible</p>
   `;
 }
 
-async function loadCodingProblem() {
-  if (!qs("#codingProblemForm") || !getToken()) return;
+function normalizeGeneratedTestCases(question) {
+  const rawCases = Array.isArray(question.test_cases) ? question.test_cases : [];
+  const sampleInput = question.sample_input || "1";
+  const sampleOutput = question.sample_output || "1";
+  const cases = rawCases
+    .filter((item) => item?.input_data && item?.expected_output)
+    .slice(0, 10)
+    .map((item, index) => ({
+      sort_order: index + 1,
+      input_data: String(item.input_data),
+      expected_output: String(item.expected_output),
+      is_visible: Boolean(item.is_visible),
+    }));
+
+  while (cases.length < 10) {
+    cases.push({
+      sort_order: cases.length + 1,
+      input_data: sampleInput,
+      expected_output: sampleOutput,
+      is_visible: cases.length < 2,
+    });
+  }
+
+  const visibleCount = cases.filter((item) => item.is_visible).length;
+  if (visibleCount !== 2) {
+    cases.forEach((item, index) => {
+      item.is_visible = index < 2;
+    });
+  }
+  return cases;
+}
+
+function generatedQuestionToProblem(question) {
+  const base = defaultProblemData();
+  const starters = genericStarterCode();
+  return {
+    ...base,
+    title: question.title || "",
+    statement: question.statement || "",
+    input_format: question.input_format || "Read input from standard input as described in the problem statement.",
+    output_format: question.output_format || "Print the required result to standard output.",
+    constraints: question.constraints || "Use efficient logic suitable for the selected difficulty.",
+    starter_code_python: question.starter_code_python || starters.starter_code_python,
+    starter_code_cpp: question.starter_code_cpp || starters.starter_code_cpp,
+    starter_code_java: question.starter_code_java || starters.starter_code_java,
+    test_cases: normalizeGeneratedTestCases(question),
+  };
+}
+
+function renderAiQuestionResults(questions = []) {
+  const holder = qs("[data-ai-question-results]");
+  const addAllButton = qs("[data-add-all-ai-questions]");
+  if (addAllButton) addAllButton.hidden = !questions.length;
+  if (!holder) return;
+
+  if (!questions.length) {
+    holder.innerHTML = "";
+    return;
+  }
+
+  holder.innerHTML = questions
+    .map(
+      (question, index) => `
+        <article class="ai-question-card">
+          <div>
+            <h4>${escapeHtml(question.title)}</h4>
+            <p>${escapeHtml(question.statement)}</p>
+            <div class="sample-grid">
+              <label>Sample Input<pre>${escapeHtml(question.sample_input)}</pre></label>
+              <label>Sample Output<pre>${escapeHtml(question.sample_output)}</pre></label>
+            </div>
+          </div>
+          <div class="ai-question-actions">
+            <button type="button" class="button-secondary" data-use-ai-question="${index}">Use</button>
+            <button type="button" data-add-ai-question="${index}">Add</button>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+async function generateAiQuestions(event) {
+  event.preventDefault();
+  const topic = qs("#aiTopic")?.value.trim();
+  const difficulty = qs("#aiDifficulty")?.value;
+  const count = Number(qs("#aiQuestionCount")?.value || 3);
+
+  if (!topic) {
+    setStatus("Please enter a topic for AI generation.", "warning");
+    return;
+  }
+
+  const submitButton = event.currentTarget.querySelector("button[type='submit']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Generating...";
+  }
 
   try {
-    const data = await getJson("/contest/problem-admin");
-    setProblemForm(data);
-    renderProblemSummary(data);
+    const data = await postJson("/questions/generate", {
+      topic,
+      difficulty,
+      count,
+    });
+    generatedAiQuestions = data.questions || [];
+    renderAiQuestionResults(generatedAiQuestions);
+    setStatus(`Generated ${generatedAiQuestions.length} question(s).`, "success");
   } catch (error) {
-    setProblemForm(defaultProblemData());
-    renderProblemSummary(defaultProblemData());
+    setStatus(error.message, "warning");
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "Generate with AI";
+    }
   }
 }
 
-function collectCodingProblemPayload() {
-  const testCases = Array.from({ length: 10 }, (_item, index) => ({
-    input_data: qs(`[data-case-input="${index}"]`)?.value.trim() || "",
-    expected_output: qs(`[data-case-output="${index}"]`)?.value.trim() || "",
-    is_visible: Boolean(qs(`[data-case-visible="${index}"]`)?.checked),
-  }));
-  const visibleCount = testCases.filter((item) => item.is_visible).length;
-  if (visibleCount !== 2) {
-    throw new Error("Exactly 2 test cases must be marked visible.");
+function useAiQuestion(index) {
+  const question = generatedAiQuestions[index];
+  if (!question) return;
+
+  const problem = normalizeProblemDraft(generatedQuestionToProblem(question), activeProblemIndex);
+  adminProblemDrafts[activeProblemIndex] = problem;
+  setProblemForm(problem);
+  renderProblemBank();
+  renderProblemSummary(adminProblemDrafts);
+  setStatus("AI question loaded in the selected question slot.", "success");
+  qs("#problemTitle")?.focus();
+}
+
+function addAiQuestion(index) {
+  const question = generatedAiQuestions[index];
+  if (!question) return;
+
+  addProblemDraft(generatedQuestionToProblem(question));
+  renderProblemSummary(adminProblemDrafts);
+  setStatus("AI question added to the contest list.", "success");
+}
+
+function addAllAiQuestions() {
+  if (!generatedAiQuestions.length) return;
+  syncActiveProblemDraft();
+  generatedAiQuestions.forEach((question) => {
+    adminProblemDrafts.push(
+      normalizeProblemDraft(generatedQuestionToProblem(question), adminProblemDrafts.length)
+    );
+  });
+  activeProblemIndex = adminProblemDrafts.length - generatedAiQuestions.length;
+  setProblemForm(adminProblemDrafts[activeProblemIndex]);
+  renderProblemBank();
+  renderProblemSummary(adminProblemDrafts);
+  setStatus(`${generatedAiQuestions.length} AI question(s) added to the contest list.`, "success");
+}
+
+async function loadCodingProblem() {
+  if (!qs("#codingProblemForm")) return null;
+  if (!getToken()) {
+    const fallback = normalizeProblemDraft(defaultProblemData(), 0);
+    setProblemDrafts([fallback]);
+    renderProblemSummary(adminProblemDrafts);
+    return null;
   }
 
-  const enabledLanguages = [];
-  if (qs("#enablePython")?.checked) enabledLanguages.push("python");
-  if (qs("#enableCpp")?.checked) enabledLanguages.push("cpp");
-  if (qs("#enableJava")?.checked) enabledLanguages.push("java");
+  try {
+    const data = await getJson("/contest/problems-admin");
+    setProblemDrafts(data);
+    renderProblemSummary(adminProblemDrafts);
+    return data;
+  } catch (error) {
+    const fallback = normalizeProblemDraft(defaultProblemData(), 0);
+    setProblemDrafts([fallback]);
+    renderProblemSummary(adminProblemDrafts);
+    return null;
+  }
+}
 
+function validateProblemDraft(problem, index = 0) {
+  const label = `Question ${index + 1}`;
+  const testCases = normalizeTestCases(problem.test_cases || []).map((item) => ({
+    input_data: item.input_data.trim(),
+    expected_output: item.expected_output.trim(),
+    is_visible: Boolean(item.is_visible),
+  }));
+  const emptyCaseIndex = testCases.findIndex(
+    (item) => !item.input_data || !item.expected_output
+  );
+  if (emptyCaseIndex !== -1) {
+    throw new Error(`${label}, test case ${emptyCaseIndex + 1} needs input and expected output.`);
+  }
+
+  const visibleCount = testCases.filter((item) => item.is_visible).length;
+  if (visibleCount !== 2) {
+    throw new Error(`${label}: Exactly 2 test cases must be marked visible.`);
+  }
+
+  const enabledLanguages = Array.isArray(problem.enabled_languages)
+    ? problem.enabled_languages
+    : [];
   if (!enabledLanguages.length) {
-    throw new Error("Enable at least one language for the coding contest.");
+    throw new Error(`${label}: Enable at least one language for the coding contest.`);
   }
 
   const payload = {
-    title: qs("#problemTitle")?.value.trim(),
-    statement: qs("#problemStatement")?.value.trim(),
-    input_format: qs("#problemInputFormat")?.value.trim(),
-    output_format: qs("#problemOutputFormat")?.value.trim(),
-    constraints: qs("#problemConstraints")?.value.trim(),
-    starter_code_python: qs("#enablePython")?.checked ? qs("#starterPython")?.value.trim() : "",
-    starter_code_cpp: qs("#enableCpp")?.checked ? qs("#starterCpp")?.value.trim() : "",
-    starter_code_java: qs("#enableJava")?.checked ? qs("#starterJava")?.value.trim() : "",
+    id: problem.id || null,
+    title: (problem.title || "").trim(),
+    statement: (problem.statement || "").trim(),
+    input_format: (problem.input_format || "").trim(),
+    output_format: (problem.output_format || "").trim(),
+    constraints: (problem.constraints || "").trim(),
+    starter_code_python: enabledLanguages.includes("python") ? (problem.starter_code_python || "").trim() : "",
+    starter_code_cpp: enabledLanguages.includes("cpp") ? (problem.starter_code_cpp || "").trim() : "",
+    starter_code_java: enabledLanguages.includes("java") ? (problem.starter_code_java || "").trim() : "",
     enabled_languages: enabledLanguages,
     test_cases: testCases,
   };
 
+  ["title", "statement", "input_format", "output_format", "constraints"].forEach((field) => {
+    if (!payload[field]) {
+      throw new Error(`${label}: ${field.replaceAll("_", " ")} is required.`);
+    }
+  });
+  enabledLanguages.forEach((language) => {
+    const key = `starter_code_${language === "cpp" ? "cpp" : language}`;
+    if (!payload[key]) {
+      throw new Error(`${label}: Starter code is required for ${language}.`);
+    }
+  });
+
   return payload;
+}
+
+function collectCodingProblemPayload() {
+  syncActiveProblemDraft();
+  return validateProblemDraft(adminProblemDrafts[activeProblemIndex], activeProblemIndex);
+}
+
+function collectCodingProblemsPayload() {
+  syncActiveProblemDraft();
+  return adminProblemDrafts.map((problem, index) => validateProblemDraft(problem, index));
 }
 
 async function saveCodingProblem(event) {
   event.preventDefault();
-  const data = await putJson("/contest/problem-admin", collectCodingProblemPayload());
-  setProblemForm(data);
-  renderProblemSummary(data);
-  setStatus("Coding question saved.", "success");
+  const data = await putJson("/contest/problems-admin", {
+    problems: collectCodingProblemsPayload(),
+  });
+  setProblemDrafts(data);
+  renderProblemSummary(adminProblemDrafts);
+  setStatus(`${adminProblemDrafts.length} coding question(s) saved.`, "success");
+}
+
+async function initializeAdminDashboard() {
+  if (!qs("#adminLoginForm")) return;
+  await Promise.all([
+    loadContestSchedule(),
+    loadCodingProblem(),
+    loadExamHistory(),
+  ]);
 }
 
 async function initializeStudentAccess() {
@@ -859,9 +1280,34 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus(error.message, "warning");
     }
   });
-qs("#enablePython")?.addEventListener("change", syncStarterVisibility);
+  qs("#enablePython")?.addEventListener("change", syncStarterVisibility);
   qs("#enableCpp")?.addEventListener("change", syncStarterVisibility);
   qs("#enableJava")?.addEventListener("change", syncStarterVisibility);
+  qs("#aiQuestionForm")?.addEventListener("submit", generateAiQuestions);
+  qs("[data-add-all-ai-questions]")?.addEventListener("click", addAllAiQuestions);
+  qs("[data-ai-question-results]")?.addEventListener("click", (event) => {
+    const useButton = event.target.closest("[data-use-ai-question]");
+    if (useButton) {
+      useAiQuestion(Number(useButton.dataset.useAiQuestion));
+      return;
+    }
+    const addButton = event.target.closest("[data-add-ai-question]");
+    if (addButton) {
+      addAiQuestion(Number(addButton.dataset.addAiQuestion));
+    }
+  });
+  qs("[data-add-problem]")?.addEventListener("click", () => addProblemDraft());
+  qs("[data-remove-problem]")?.addEventListener("click", removeActiveProblemDraft);
+  qs("[data-problem-bank]")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-select-problem]");
+    if (!button) return;
+    setActiveProblemDraft(Number(button.dataset.selectProblem));
+  });
+  qs("#codingProblemForm")?.addEventListener("input", () => {
+    syncActiveProblemDraft();
+    renderProblemBank();
+    renderProblemSummary(adminProblemDrafts);
+  });
   qs("#codingProblemForm")?.addEventListener("submit", async (event) => {
     try {
       await saveCodingProblem(event);
@@ -869,9 +1315,7 @@ qs("#enablePython")?.addEventListener("change", syncStarterVisibility);
       setStatus(error.message, "warning");
     }
   });
-  loadContestSchedule().catch(() => {});
-  loadCodingProblem().catch(() => {});
-  loadExamHistory().catch(() => {});
+  initializeAdminDashboard().catch(() => {});
   initializeStudentAccess();
 });
 

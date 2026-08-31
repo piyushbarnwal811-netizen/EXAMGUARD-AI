@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
-from app.api import admin, auth, contest, exam, tracking
+from app.api import admin, auth, contest, exam, questions, tracking
 from app.config import PROJECT_DIR, get_settings
 from app.db.session import init_db
 
@@ -26,7 +27,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,10 +41,19 @@ async def health_check() -> dict[str, str]:
 
 frontend_dir = PROJECT_DIR / "frontend"
 if frontend_dir.exists():
-    app.mount("/frontend", StaticFiles(directory=frontend_dir), name="frontend")
+    app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+# Safe browser download endpoint
+@app.get("/api/download/safe-browser")
+async def download_safe_browser():
+    file_path = PROJECT_DIR / "assets" / "ExamGuardSafeBrowser.exe"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Safe browser installer not found")
+    return FileResponse(path=file_path, filename="ExamGuardSafeBrowser.exe", media_type="application/octet-stream")
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(contest.router, prefix="/api")
 app.include_router(exam.router, prefix="/api")
+app.include_router(questions.router, prefix="/api")
 app.include_router(tracking.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")

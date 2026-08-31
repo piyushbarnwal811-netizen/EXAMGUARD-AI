@@ -14,7 +14,7 @@
       </div>
       <nav class="nav">
         <a class="button button-secondary" href="login.html">Student Login</a>
-        <a class="button" href="../../public/index.html">Home</a>
+        <a class="button" href="../../index.html">Home</a>
       </nav>
     </header>
 
@@ -78,6 +78,44 @@
 
       <section class="card wide-card">
         <h2>Coding Question</h2>
+        <section class="ai-generator-panel">
+          <h3>AI Question Generator</h3>
+          <form id="aiQuestionForm" class="ai-generator-form">
+            <label>
+              Topic
+              <input id="aiTopic" name="topic" type="text" placeholder="Arrays, SQL, Python OOP" required />
+            </label>
+            <label>
+              Difficulty
+              <select id="aiDifficulty" name="difficulty" required>
+                <option value="Easy">Easy</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </label>
+            <label>
+              Count
+              <input id="aiQuestionCount" name="count" type="number" min="1" max="10" value="3" required />
+            </label>
+            <button type="submit">Generate with AI</button>
+          </form>
+          <div class="actions ai-generator-actions">
+            <button type="button" class="button-secondary" data-add-all-ai-questions hidden>Add All Generated</button>
+          </div>
+          <div class="ai-question-list" data-ai-question-results></div>
+        </section>
+
+        <section class="problem-bank-panel">
+          <div class="panel-head">
+            <h3>Questions in Contest</h3>
+            <div class="actions compact-actions">
+              <button type="button" class="button-secondary" data-add-problem>Add Question</button>
+              <button type="button" class="button-danger" data-remove-problem>Remove Question</button>
+            </div>
+          </div>
+          <div class="problem-bank-list" data-problem-bank></div>
+        </section>
+
         <form id="codingProblemForm">
           <div class="problem-form-grid">
             <label>
@@ -134,7 +172,7 @@
           </div>
 
           <div class="test-case-list" data-test-cases></div>
-          <button type="submit">Save Coding Question</button>
+          <button type="submit">Save Coding Questions</button>
         </form>
         <div class="result-list" data-problem-summary></div>
       </section>
@@ -148,6 +186,7 @@
           <button type="button" class="button-secondary" data-refresh-exam-history>Refresh History</button>
           <button type="button" class="button-secondary" data-download-report>Download All</button>
         </div>
+        <div class="result-list" data-invite-result></div>
         <div class="table-wrap report-table-wrap">
           <table>
             <thead>

@@ -1,5 +1,6 @@
-const LOCKDOWN_API_BASE = window.EXAMGUARD_API_BASE || "http://127.0.0.1:8000/api";
+const LOCKDOWN_API_BASE = window.EXAMGUARD_API_BASE || "/api";
 let lockdownStarted = false;
+let examActive = false;
 let examSubmitted = false;
 let lastSecurityEventAt = new Map();
 let resumeTimer = null;
@@ -15,6 +16,7 @@ function lockdownContext(extraDetails = {}) {
     visibility_state: document.visibilityState,
     fullscreen_active: Boolean(document.fullscreenElement),
     lockdown_started: lockdownStarted,
+    exam_active: examActive,
     ...extraDetails,
   };
 }
@@ -33,6 +35,10 @@ function setLockdownButtonText(message) {
 
 function lockdownEnforced() {
   return lockdownStarted && !examSubmitted;
+}
+
+function escapeLocked() {
+  return (lockdownStarted || examActive) && !examSubmitted;
 }
 
 function shouldSkipDuplicate(eventType, details) {
@@ -152,7 +158,7 @@ function blockRestrictedKeys(event) {
     (event.ctrlKey && event.shiftKey && ["I", "J", "C"].includes(key)) ||
     ((event.ctrlKey || event.metaKey) && ["U", "S", "P"].includes(key)) ||
     (event.altKey && key === "TAB") ||
-    (lockdownEnforced() && event.key === "Escape");
+    (escapeLocked() && event.key === "Escape");
 
   if (blockedCombos) {
     event.preventDefault();
@@ -286,9 +292,17 @@ window.addEventListener("pagehide", () => {
 
 function markExamSubmitted() {
   examSubmitted = true;
+  examActive = false;
   hideFullscreenGuard();
   setLockdownStatus("Exam submitted", "success");
   setLockdownButtonText("Fullscreen Complete");
+}
+
+function setExamActive(active) {
+  examActive = Boolean(active);
+  if (examActive) {
+    examSubmitted = false;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -303,4 +317,5 @@ window.ExamGuardLockdown = {
   isFullscreen: () => Boolean(document.fullscreenElement),
   hasStarted: () => lockdownStarted,
   markSubmitted: markExamSubmitted,
+  setExamActive,
 };

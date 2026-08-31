@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,9 +28,12 @@ from app.schemas.coding import (
     CodeRunRequest,
     CodeSubmitRequest,
     CodingProblemAdminOut,
+    CodingProblemSaveIn,
     CodingProblemOut,
+    CodingProblemsUpdateIn,
     CodingProblemUpdateIn,
     CodingTestCaseAdminOut,
+    ContestFinalResultOut,
     ContestGateOut,
     ContestScheduleIn,
     ContestScheduleOut,
@@ -116,6 +119,7 @@ def _problem_admin_out(problem: CodingProblem) -> CodingProblemAdminOut:
     return CodingProblemAdminOut(
         id=problem.id,
         contest_id=problem.contest_id,
+        order_index=problem.order_index,
         title=problem.title,
         statement=problem.statement,
         input_format=problem.input_format,
@@ -311,6 +315,205 @@ def _submission_out(submission: CodeSubmission) -> CodeExecutionOut:
     )
 
 
+def _final_result_out(submission: CodeSubmission) -> ContestFinalResultOut:
+    return ContestFinalResultOut(
+        submission_id=submission.id,
+        problem_id=submission.problem_id,
+        language=submission.language,
+        score=submission.score,
+        passed_cases=submission.passed_cases,
+        total_cases=submission.total_cases,
+        submitted_at=_as_aware_utc(submission.submitted_at),
+        auto_submitted=submission.is_auto_submitted,
+    )
+
+
+async def _ensure_admin_contest(db: AsyncSession) -> CodingContest:
+    contest = await _latest_contest(db, include_unpublished=True, for_update=True)
+    if contest is not None:
+        return contest
+
+    now = _now_utc()
+    # Do not publish or activate a contest just because the admin saves a coding task.
+    # The contest schedule endpoints remain responsible for setting the exam window and
+    # publication state. This avoids a student-facing contest becoming visible as soon as
+    # an admin saves the coding question.
+    contest = CodingContest(
+        title=settings.DEFAULT_CONTEST_TITLE,
+        start_time=now + timedelta(hours=1),
+        end_time=now + timedelta(hours=2),
+        is_published=False,
+    )
+    db.add(contest)
+    await db.flush()
+    return contest
+
+
+def _apply_problem_payload(
+    problem: CodingProblem,
+    payload: CodingProblemSaveIn | CodingProblemUpdateIn,
+    order_index: int,
+) -> None:
+    problem.title = payload.title
+    problem.statement = payload.statement
+    problem.input_format = payload.input_format
+    problem.output_format = payload.output_format
+    problem.constraints = payload.constraints
+    problem.starter_code_python = payload.starter_code_python
+    problem.starter_code_cpp = payload.starter_code_cpp
+    problem.starter_code_java = payload.starter_code_java
+    problem.enabled_languages = ",".join(payload.enabled_languages)
+    problem.order_index = order_index
+
+
+def _test_cases_from_payload(
+    payload: CodingProblemSaveIn | CodingProblemUpdateIn,
+    problem_id: int,
+) -> list[CodingTestCase]:
+    return [
+        CodingTestCase(
+            problem_id=problem_id,
+            input_data=test_case.input_data,
+            expected_output=test_case.expected_output,
+            is_visible=test_case.is_visible,
+            sort_order=index,
+        )
+        for index, test_case in enumerate(payload.test_cases, start=1)
+    ]
+
+
+async def _save_admin_problem_set(
+    payloads: list[CodingProblemSaveIn | CodingProblemUpdateIn],
+    db: AsyncSession,
+) -> list[CodingProblem]:
+    contest = await _ensure_admin_contest(db)
+    existing_result = await db.execute(
+        select(CodingProblem)
+        .options(selectinload(CodingProblem.test_cases))
+        .where(CodingProblem.contest_id == contest.id)
+        .order_by(CodingProblem.order_index)
+    )
+    existing_problems = list(existing_result.scalars().all())
+    existing_by_id = {problem.id: problem for problem in existing_problems}
+    payload_ids = [
+        payload.id
+        for payload in payloads
+        if isinstance(payload, CodingProblemSaveIn) and payload.id is not None
+    ]
+
+    duplicate_ids = {
+        problem_id
+        for problem_id in payload_ids
+        if payload_ids.count(problem_id) > 1
+    }
+    if duplicate_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Duplicate coding problem id in request.",
+        )
+
+    unknown_ids = [
+        problem_id for problem_id in payload_ids if problem_id not in existing_by_id
+    ]
+    if unknown_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Coding problem not found in this contest.",
+        )
+
+    for problem in existing_problems:
+        problem.order_index = -int(problem.id)
+    await db.flush()
+
+    saved_problems: list[CodingProblem] = []
+    kept_ids: set[int] = set()
+    for order_index, payload in enumerate(payloads, start=1):
+        payload_id = (
+            payload.id
+            if isinstance(payload, CodingProblemSaveIn) and payload.id is not None
+            else None
+        )
+        if payload_id is None:
+            problem = CodingProblem(
+                contest_id=contest.id,
+                title=payload.title,
+                statement=payload.statement,
+                input_format=payload.input_format,
+                output_format=payload.output_format,
+                constraints=payload.constraints,
+                starter_code_python=payload.starter_code_python,
+                starter_code_cpp=payload.starter_code_cpp,
+                starter_code_java=payload.starter_code_java,
+                enabled_languages=",".join(payload.enabled_languages),
+                order_index=order_index,
+                max_score=100,
+            )
+            db.add(problem)
+            await db.flush()
+        else:
+            problem = existing_by_id[payload_id]
+            kept_ids.add(payload_id)
+            _apply_problem_payload(problem, payload, order_index)
+            await db.flush()
+
+        await db.execute(
+            delete(CodingTestCase).where(CodingTestCase.problem_id == problem.id)
+        )
+        for test_case in _test_cases_from_payload(payload, problem.id):
+            db.add(test_case)
+        saved_problems.append(problem)
+
+    for problem in existing_problems:
+        if problem.id not in kept_ids:
+            await db.delete(problem)
+
+    await db.commit()
+    result = await db.execute(
+        select(CodingProblem)
+        .options(selectinload(CodingProblem.test_cases))
+        .where(CodingProblem.contest_id == contest.id)
+        .order_by(CodingProblem.order_index)
+    )
+    return result.scalars().all()
+
+
+async def _latest_submission_for_contest(
+    db: AsyncSession,
+    student_id: int,
+    contest_id: int,
+) -> CodeSubmission | None:
+    result = await db.execute(
+        select(CodeSubmission)
+        .where(
+            CodeSubmission.student_id == student_id,
+            CodeSubmission.contest_id == contest_id,
+        )
+        .order_by(CodeSubmission.submitted_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _latest_submissions_for_contest(
+    db: AsyncSession,
+    student_id: int,
+    contest_id: int,
+) -> list[CodeSubmission]:
+    result = await db.execute(
+        select(CodeSubmission)
+        .where(
+            CodeSubmission.student_id == student_id,
+            CodeSubmission.contest_id == contest_id,
+        )
+        .order_by(CodeSubmission.problem_id, CodeSubmission.submitted_at.desc())
+    )
+    latest_by_problem: dict[int, CodeSubmission] = {}
+    for submission in result.scalars().all():
+        if submission.problem_id not in latest_by_problem:
+            latest_by_problem[submission.problem_id] = submission
+    return list(latest_by_problem.values())
+
+
 async def _create_code_submission(
     db: AsyncSession,
     subject: dict[str, object],
@@ -405,7 +608,7 @@ async def _create_code_submission(
 @router.get("/status", response_model=ContestGateOut)
 async def contest_status(
     db: AsyncSession = Depends(get_db),
-    _subject: dict[str, object] = Depends(require_student),
+    subject: dict[str, object] = Depends(require_student),
 ) -> ContestGateOut:
     contest = await _latest_contest(db)
     now = _now_utc()
@@ -421,8 +624,23 @@ async def contest_status(
             message="No coding contest has been scheduled.",
         )
 
+    student_id = int(subject["student_id"])
     problems = sorted(contest.problems, key=lambda item: item.order_index)
-    problem = problems[0] if problems and contest_state == "ACTIVE" else None
+    active_problems = problems if contest_state == "ACTIVE" else []
+    problem = active_problems[0] if active_problems else None
+    latest_submissions = await _latest_submissions_for_contest(
+        db,
+        student_id,
+        contest.id,
+    )
+    submitted_problem_ids = [submission.problem_id for submission in latest_submissions]
+    final_submission = None
+    if contest_state == "ENDED":
+        final_submission = await _latest_submission_for_contest(
+            db,
+            student_id,
+            contest.id,
+        )
     return ContestGateOut(
         status=contest_state,
         server_time=now,
@@ -430,6 +648,14 @@ async def contest_status(
         end_time=_as_aware_utc(contest.end_time),
         remaining_seconds=remaining_seconds,
         problem=_problem_out(problem) if problem else None,
+        problems=[_problem_out(item) for item in active_problems],
+        submitted_problem_ids=submitted_problem_ids,
+        final_result=_final_result_out(final_submission) if final_submission else None,
+        final_results=[
+            _final_result_out(submission)
+            for submission in latest_submissions
+            if contest_state == "ENDED"
+        ],
         message=None if problem or contest_state != "ACTIVE" else "No coding problem configured.",
     )
 
@@ -515,79 +741,42 @@ async def get_admin_coding_problem(
     return _problem_admin_out(problem)
 
 
+@router.get("/problems-admin", response_model=list[CodingProblemAdminOut])
+async def get_admin_coding_problems(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+) -> list[CodingProblemAdminOut]:
+    contest = await _latest_contest(db, include_unpublished=True)
+    if contest is None or not contest.problems:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coding problems have been configured.",
+        )
+
+    return [
+        _problem_admin_out(problem)
+        for problem in sorted(contest.problems, key=lambda item: item.order_index)
+    ]
+
+
 @router.put("/problem-admin", response_model=CodingProblemAdminOut)
 async def update_admin_coding_problem(
     payload: CodingProblemUpdateIn,
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ) -> CodingProblemAdminOut:
-    contest = await _latest_contest(db, include_unpublished=True, for_update=True)
-    if contest is None:
-        now = _now_utc()
-        # Do not publish or activate a contest just because the admin saves a coding task.
-        # The contest schedule endpoints remain responsible for setting the exam window and
-        # publication state. This avoids a student-facing contest becoming visible as soon as
-        # an admin saves the coding question.
-        contest = CodingContest(
-            title=settings.DEFAULT_CONTEST_TITLE,
-            start_time=now + timedelta(hours=1),
-            end_time=now + timedelta(hours=2),
-            is_published=False,
-        )
-        db.add(contest)
-        await db.flush()
+    problems = await _save_admin_problem_set([payload], db)
+    return _problem_admin_out(problems[0])
 
-    problems = sorted(contest.problems, key=lambda item: item.order_index)
-    enabled_language_csv = ",".join(payload.enabled_languages)
-    if problems:
-        problem = problems[0]
-        problem.title = payload.title
-        problem.statement = payload.statement
-        problem.input_format = payload.input_format
-        problem.output_format = payload.output_format
-        problem.constraints = payload.constraints
-        problem.starter_code_python = payload.starter_code_python
-        problem.starter_code_cpp = payload.starter_code_cpp
-        problem.starter_code_java = payload.starter_code_java
-        problem.enabled_languages = enabled_language_csv
-    else:
-        problem = CodingProblem(
-            contest_id=contest.id,
-            title=payload.title,
-            statement=payload.statement,
-            input_format=payload.input_format,
-            output_format=payload.output_format,
-            constraints=payload.constraints,
-            starter_code_python=payload.starter_code_python,
-            starter_code_cpp=payload.starter_code_cpp,
-            starter_code_java=payload.starter_code_java,
-            enabled_languages=enabled_language_csv,
-            order_index=1,
-            max_score=100,
-        )
-        db.add(problem)
-        await db.flush()
 
-    problem.test_cases.clear()
-    await db.flush()
-    problem.test_cases = [
-        CodingTestCase(
-            input_data=test_case.input_data,
-            expected_output=test_case.expected_output,
-            is_visible=test_case.is_visible,
-            sort_order=index,
-        )
-        for index, test_case in enumerate(payload.test_cases, start=1)
-    ]
-
-    await db.commit()
-    result = await db.execute(
-        select(CodingProblem)
-        .options(selectinload(CodingProblem.test_cases))
-        .where(CodingProblem.id == problem.id)
-    )
-    saved_problem = result.scalar_one()
-    return _problem_admin_out(saved_problem)
+@router.put("/problems-admin", response_model=list[CodingProblemAdminOut])
+async def update_admin_coding_problems(
+    payload: CodingProblemsUpdateIn,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+) -> list[CodingProblemAdminOut]:
+    problems = await _save_admin_problem_set(payload.problems, db)
+    return [_problem_admin_out(problem) for problem in problems]
 
 
 @router.put("/draft", response_model=CodeDraftOut)

@@ -8,8 +8,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from app.config import get_settings
 from app.services.email_service import send_email
 
-settings = get_settings()
-
 
 def create_invite_token() -> str:
     return secrets.token_urlsafe(32)
@@ -20,6 +18,7 @@ def hash_invite_token(token: str) -> str:
 
 
 def build_exam_invite_link(token: str) -> str:
+    settings = get_settings()
     parts = urlsplit(settings.FRONTEND_EXAM_URL)
     query = parse_qsl(parts.query, keep_blank_values=True)
     query.append(("invite", token))
@@ -41,6 +40,7 @@ def _format_expiry(expires_at: datetime) -> str:
 def build_invite_email_body(
     student_name: str,
     invite_link: str,
+    pin: str,
     expires_at: datetime,
 ) -> str:
     return (
@@ -48,6 +48,8 @@ def build_invite_email_body(
         "You have been invited to take your ExamGuard AI exam.\n\n"
         "Open this secure access link to begin:\n"
         f"{invite_link}\n\n"
+        "Use this PIN when the exam page asks for it:\n"
+        f"{pin}\n\n"
         f"This link expires on {_format_expiry(expires_at)} and can be used once.\n"
         "If you were not expecting this invitation, please contact your exam admin.\n"
     )
@@ -57,10 +59,11 @@ def send_exam_invite_email(
     to_email: str,
     student_name: str,
     invite_link: str,
+    pin: str,
     expires_at: datetime,
 ) -> None:
     send_email(
         to_email=to_email,
         subject="Your ExamGuard AI exam access link",
-        body=build_invite_email_body(student_name, invite_link, expires_at),
+        body=build_invite_email_body(student_name, invite_link, pin, expires_at),
     )

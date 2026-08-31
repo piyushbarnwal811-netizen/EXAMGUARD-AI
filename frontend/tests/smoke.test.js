@@ -29,10 +29,16 @@ test("admin page exposes coding question management", () => {
   const html = read("src/pages/admin.html");
   const main = read("src/js/main.js");
 
+  assert.match(html, /id="aiQuestionForm"/);
+  assert.match(html, /id="aiTopic"/);
+  assert.match(html, /id="aiDifficulty"/);
+  assert.match(html, /data-ai-question-results/);
   assert.match(html, /id="codingProblemForm"/);
   assert.match(html, /data-test-cases/);
   assert.match(html, /id="starterPython"/);
-  assert.match(main, /\/contest\/problem-admin/);
+  assert.match(main, /\/questions\/generate/);
+  assert.match(main, /generatedQuestionToProblem/);
+  assert.match(main, /\/contest\/problems-admin/);
   assert.match(main, /Exactly 2 test cases must be marked visible/);
 });
 
@@ -77,11 +83,26 @@ test("lockdown script tracks fullscreen and focus violations", () => {
   assert.match(lockdown, /visibilitychange/);
   assert.match(lockdown, /window\.addEventListener\("blur"/);
   assert.match(lockdown, /window\.addEventListener\("pagehide"/);
+  assert.match(lockdown, /examActive/);
+  assert.match(lockdown, /escapeLocked/);
+  assert.match(lockdown, /setExamActive/);
   assert.match(lockdown, /FULLSCREEN_EXIT/);
   assert.match(lockdown, /FULLSCREEN_RESUME_FAILED/);
   assert.match(lockdown, /FOCUS_LOST/);
   assert.match(lockdown, /BLOCKED_KEY/);
   assert.match(lockdown, /ExamGuardLockdown/);
+});
+
+test("coding contest shows final marks after the exam ends", () => {
+  const coding = read("src/js/coding.js");
+  const css = read("src/css/style.css");
+
+  assert.match(coding, /final_result/);
+  assert.match(coding, /Final Marks/);
+  assert.match(coding, /latestFinalResult/);
+  assert.match(coding, /setExamActive/);
+  assert.match(css, /final-score-card/);
+  assert.match(css, /score-value/);
 });
 
 test("precheck gates the contest on system camera location and fullscreen", () => {

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = ""
+    SMTP_USE_SSL: bool = False
+    SMTP_STARTTLS: bool = True
+    SMTP_TIMEOUT_SECONDS: int = 20
     FRONTEND_EXAM_URL: str = "http://127.0.0.1:8000/frontend/src/pages/exam.html"
     EXAM_INVITE_EXPIRE_HOURS: int = 72
 
@@ -43,6 +46,10 @@ class Settings(BaseSettings):
     LOCAL_CODE_EXECUTION_FALLBACK: bool = True
     AUTO_SUBMIT_GRACE_SECONDS: int = 60
     DEFAULT_CONTEST_TITLE: str = "ExamGuard Pro Coding Contest"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-flash-latest"
+    GEMINI_TIMEOUT_SECONDS: int = 90
+    GEMINI_REMOTE_ENABLED: bool = True
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

@@ -27,6 +27,17 @@ class CodingProblemOut(BaseModel):
     visible_samples: list[VisibleSampleOut]
 
 
+class ContestFinalResultOut(BaseModel):
+    submission_id: int
+    problem_id: int
+    language: CodeLanguage
+    score: float
+    passed_cases: int
+    total_cases: int
+    submitted_at: datetime
+    auto_submitted: bool = False
+
+
 class ContestGateOut(BaseModel):
     status: ContestStatus
     server_time: datetime
@@ -34,6 +45,10 @@ class ContestGateOut(BaseModel):
     end_time: datetime | None
     remaining_seconds: int
     problem: CodingProblemOut | None = None
+    problems: list[CodingProblemOut] = Field(default_factory=list)
+    submitted_problem_ids: list[int] = Field(default_factory=list)
+    final_result: ContestFinalResultOut | None = None
+    final_results: list[ContestFinalResultOut] = Field(default_factory=list)
     message: str | None = None
 
 
@@ -134,6 +149,7 @@ class CodingTestCaseIn(BaseModel):
 class CodingProblemAdminOut(BaseModel):
     id: int
     contest_id: int
+    order_index: int = 1
     title: str
     statement: str
     input_format: str
@@ -179,6 +195,14 @@ class CodingProblemUpdateIn(BaseModel):
             if not code.strip():
                 raise ValueError(f"Starter code is required for enabled language: {language}.")
         return self
+
+
+class CodingProblemSaveIn(CodingProblemUpdateIn):
+    id: int | None = Field(default=None, ge=1)
+
+
+class CodingProblemsUpdateIn(BaseModel):
+    problems: list[CodingProblemSaveIn] = Field(..., min_length=1, max_length=25)
 
 
 class CodeExecutionOut(BaseModel):

@@ -39,6 +39,7 @@ from app.schemas.student import (
     StudentCsvRow,
     StudentImportResult,
 )
+from app.services.email_service import validate_email_settings
 from app.services.excel_service import generate_excel_report
 from app.services.invite_service import (
     build_exam_invite_link,
@@ -55,7 +56,6 @@ from app.services.student_import_service import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 PIN_ALPHABET = string.ascii_uppercase + string.digits
 ROLL_NO_SAFE = re.compile(r"[^A-Z0-9]+")
-settings = get_settings()
 AI_CHEATING_EVENTS = {
     "FACE_MISSING",
     "LOOKING_AWAY",
@@ -69,7 +69,18 @@ class InviteJob:
     email: str
     name: str
     token: str
+    pin: str
     expires_at: datetime
+
+
+def _ensure_invite_email_configured() -> None:
+    try:
+        validate_email_settings()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
 
 
 def _normalize_header(value: str) -> str:
@@ -129,10 +140,12 @@ def _generated_roll_no(email: str, reserved_roll_numbers: set[str]) -> str:
 
 
 def _queue_invites(students: list[Student]) -> list[InviteJob]:
+    settings = get_settings()
     expires_at = datetime.now(timezone.utc) + timedelta(
         hours=settings.EXAM_INVITE_EXPIRE_HOURS
     )
     used_hashes: set[str] = set()
+    used_pins: set[str] = set()
     jobs: list[InviteJob] = []
 
     for student in students:
@@ -143,16 +156,21 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
                 used_hashes.add(token_hash)
                 break
 
+        pin = _new_pin(used_pins)
+        student.secret_pin = hash_secret(pin)
+        student.is_pin_used = False
         student.invite_token_hash = token_hash
         student.invite_token_expires_at = expires_at
         student.invite_sent_at = None
         student.invite_accepted_at = None
+        student.is_invite_used = False
         jobs.append(
             InviteJob(
                 student=student,
                 email=student.email,
                 name=student.name,
                 token=token,
+                pin=pin,
                 expires_at=expires_at,
             )
         )
@@ -161,6 +179,11 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
 
 
 async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFailure]]:
+    try:
+        validate_email_settings()
+    except RuntimeError as exc:
+        return 0, [InviteFailure(email=job.email, error=str(exc)) for job in jobs]
+
     sent = 0
     failures: list[InviteFailure] = []
 
@@ -172,6 +195,7 @@ async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFail
                 job.email,
                 job.name,
                 invite_link,
+                job.pin,
                 job.expires_at,
             )
         except Exception as exc:
@@ -544,6 +568,8 @@ async def import_students_sheet(
         ) from exc
 
     inserted, updated, students = await _upsert_imported_students(rows, db)
+    if send_invites:
+        _ensure_invite_email_configured()
     invite_jobs = _queue_invites(students) if send_invites else []
 
     try:
@@ -585,6 +611,7 @@ async def send_student_invites(
             detail="Upload students before sending invites.",
         )
 
+    _ensure_invite_email_configured()
     invite_jobs = _queue_invites(students)
     try:
         await db.commit()

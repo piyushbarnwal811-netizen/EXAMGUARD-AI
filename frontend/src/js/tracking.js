@@ -1,4 +1,4 @@
-const TRACKING_API_BASE = window.EXAMGUARD_API_BASE || "http://127.0.0.1:8000/api";
+const TRACKING_API_BASE = window.EXAMGUARD_API_BASE || "/api";
 const trackingState = {
   locationStatus: "idle",
   mobileDeviceReported: false,

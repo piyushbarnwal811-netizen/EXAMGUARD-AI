@@ -14,4 +14,5 @@ openpyxl
 xlrd
 email-validator
 python-dotenv
+google-generativeai
 pytest
