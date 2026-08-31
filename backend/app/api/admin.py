@@ -9,7 +9,7 @@ import re
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
@@ -545,6 +545,7 @@ async def import_students_sheet(
     file: UploadFile = File(...),
     send_invites: bool = Form(False),
     db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     _admin: dict[str, object] = Depends(require_admin),
 ) -> StudentImportResult:
     if not file.filename:
@@ -568,8 +569,7 @@ async def import_students_sheet(
         ) from exc
 
     inserted, updated, students = await _upsert_imported_students(rows, db)
-    if send_invites:
-        _ensure_invite_email_configured()
+
     invite_jobs = _queue_invites(students) if send_invites else []
 
     try:
@@ -584,8 +584,15 @@ async def import_students_sheet(
     invites_sent = 0
     failed_invites: list[InviteFailure] = []
     if invite_jobs:
-        invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
-        await db.commit()
+        _ensure_invite_email_configured()
+        # Offload email sending to background to avoid request timeout
+        async def _send_background():
+            nonlocal invites_sent, failed_invites
+            sent, failures = await _send_invite_jobs(invite_jobs)
+            invites_sent = sent
+            failed_invites = failures
+            await db.commit()
+        background_tasks.add_task(_send_background)
 
     return StudentImportResult(
         filename=file.filename,

@@ -82,11 +82,20 @@ function backendUnavailableMessage() {
   return `Backend unavailable at ${API_BASE}. Ensure the FastAPI server is running and reachable.`;
 }
 
-async function apiFetch(path, options = {}) {
-  try {
-    return await fetch(`${API_BASE}${path}`, options);
-  } catch {
-    throw new Error(backendUnavailableMessage());
+async function apiFetch(path, options = {}, retries = 2) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(`${API_BASE}${path}`, options);
+      if (response.status === 503 && attempt < retries) {
+        // wait a bit before retrying (Render cold‑start)
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      return response;
+    } catch {
+      if (attempt >= retries) throw new Error(backendUnavailableMessage());
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
   }
 }
 
