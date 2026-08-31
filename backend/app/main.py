@@ -51,6 +51,14 @@ async def download_safe_browser():
         raise HTTPException(status_code=404, detail="Safe browser installer not found")
     return FileResponse(path=file_path, filename="ExamGuardSafeBrowser.exe", media_type="application/octet-stream")
 
+# SEB config download endpoint
+@app.get("/api/download/seb-config")
+async def download_seb_config():
+    file_path = PROJECT_DIR / "assets" / "ExamConfig.seb"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="SEB config not found")
+    return FileResponse(path=file_path, filename="ExamConfig.seb", media_type="application/octet-stream")
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(contest.router, prefix="/api")
 app.include_router(exam.router, prefix="/api")

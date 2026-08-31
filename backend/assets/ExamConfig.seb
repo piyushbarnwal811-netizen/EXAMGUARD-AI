@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<seb version="2.0">
+  <config>
+    <key name="startURL">https://examguard-ai-317p.onrender.com</key>
+    <key name="fullscreen">true</key>
+    <key name="disableTaskSwitching">true</key>
+    <key name="disableVirtualKeyboard">true</key>
+    <key name="disablePrintScreen">true</key>
+    <key name="disableClipboard">true</key>
+    <key name="disableRightClick">true</key>
+    <key name="allowReload">false</key>
+    <key name="showReloadButton">false</key>
+    <key name="showTime">false</key>
+    <key name="showKeyboardLayout">false</key>
+    <key name="showWiFi">false</key>
+    <key name="showAudioControl">false</key>
+    <key name="browserExamKey">examguard-ai-317p</key>
+    <key name="quitPassword"></key>
+    <key name="confirmQuit">true</key>
+  </config>
+</seb>

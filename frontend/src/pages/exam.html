@@ -36,6 +36,7 @@
         <button type="button" class="button-secondary" data-camera-stop disabled>Stop Camera</button>
         <button type="button" data-location-send>Send Location</button>
         <button type="button" id="downloadSafeBrowser" class="button-secondary">Download Safe Browser</button>
+        <button type="button" id="launchSEB" class="button-secondary">Launch in SEB</button>
       </nav>
     </header>
 
@@ -182,6 +183,9 @@
     <script>
       document.getElementById('downloadSafeBrowser')?.addEventListener('click', () => {
         window.location.href = '/api/download/safe-browser';
+      });
+      document.getElementById('launchSEB')?.addEventListener('click', () => {
+        window.location.href = '/api/download/seb-config';
       });
     </script>
   </body>

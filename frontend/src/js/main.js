@@ -1,8 +1,8 @@
 function resolveApiBase() {
   const configured = localStorage.getItem("examguard_api_base");
   if (configured) return configured.replace(/\/$/, "");
-  // Use relative path so it works on any origin
-  return "/api";
+  // Default to live Render backend for production (Vercel frontend)
+  return "https://examguard-ai-317p.onrender.com";
 }
 
 const API_BASE = resolveApiBase();
