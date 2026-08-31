@@ -39,6 +39,11 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok", "app": settings.APP_NAME}
 
 
+@app.get("/api/health")
+async def api_health_check() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 frontend_dir = PROJECT_DIR / "frontend"
 if frontend_dir.exists():
     app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
