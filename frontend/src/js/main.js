@@ -45,6 +45,10 @@ function setStatus(message, type = "") {
   status.textContent = message;
 }
 
+function showBusy(msg = "Logging in…") {
+  setStatus(msg, "info");
+}
+
 function setExamStatus(message, type = "") {
   setStatus(message, type);
   const contestStatus = qs("[data-contest-status]");
@@ -89,8 +93,10 @@ function backendUnavailableMessage() {
   return `Backend unavailable at ${API_BASE}. Ensure the FastAPI server is running and reachable.`;
 }
 
+const AUTH_PATHS = ["/auth/admin-login", "/auth/verify-pin", "/auth/verify-invite"];
+
 async function apiFetch(path, options = {}) {
-  const maxTotalMs = 45000; // 45 seconds total backoff
+  const maxTotalMs = AUTH_PATHS.includes(path) ? 8000 : 45000;
   const start = Date.now();
   let attempt = 0;
   const token = getToken();
@@ -104,10 +110,10 @@ async function apiFetch(path, options = {}) {
   while (true) {
     try {
       const response = await fetch(`${API_BASE}${path}`, fetchOptions);
-      if (response.status === 503) {
+      if (response.status === 503 && !AUTH_PATHS.includes(path)) {
         const elapsed = Date.now() - start;
         if (elapsed >= maxTotalMs) {
-          return response; // give up, let caller handle
+          return response;
         }
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
         await new Promise((r) => setTimeout(r, delay));
@@ -301,7 +307,6 @@ async function handleAdminLogin(event) {
   event.preventDefault();
   const form = event.currentTarget;
 
-  // Support both name="username" and name="email" for the identifier field
   const usernameInput = form.querySelector('[name="username"]') || form.querySelector('[name="email"]');
   const passwordInput = form.querySelector('[name="password"]');
 
@@ -318,14 +323,13 @@ async function handleAdminLogin(event) {
     return;
   }
 
+  showBusy("Logging in…");
+
   try {
-    const data = await postJson("/auth/admin-login", {
-      username,
-      password,
-    });
+    const data = await postJson("/auth/admin-login", { username, password });
     saveToken(data.access_token);
-    // Redirect to admin dashboard page
-    window.location.href = "admin.html";
+    setStatus("✅ Admin login successful – loading dashboard…", "success");
+    setTimeout(() => { window.location.href = "admin.html"; }, 300);
   } catch (error) {
     setStatus(error.message, "warning");
   }
