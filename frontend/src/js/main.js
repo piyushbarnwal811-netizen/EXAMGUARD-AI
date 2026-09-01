@@ -441,8 +441,45 @@ async function uploadCsv(event) {
     return;
   }
 
+  const file = fileInput.files[0];
+  // If Excel, send as-is (backend handles). For CSV, clean client-side.
+  let uploadFile = file;
+  if (file.name.toLowerCase().endsWith(".csv")) {
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+      if (lines.length === 0) {
+        setStatus("CSV file is empty.", "warning");
+        return;
+      }
+      const header = lines[0].split(",");
+      const emailIdx = header.findIndex(h => h.trim().toLowerCase() === "email");
+      if (emailIdx === -1) {
+        // No email column, send original
+      } else {
+        const cleanedLines = [lines[0]];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",");
+          const emailVal = cols[emailIdx]?.trim();
+          if (emailVal && emailVal.includes("@")) {
+            cleanedLines.push(lines[i]);
+          }
+        }
+        if (cleanedLines.length === 1) {
+          setStatus("No valid rows with email found in CSV.", "warning");
+          return;
+        }
+        const cleanedText = cleanedLines.join("\n");
+        uploadFile = new Blob([cleanedText], { type: "text/csv" });
+      }
+    } catch (e) {
+      // If any parsing error, fall back to original file
+      console.warn("CSV client-side cleaning failed, sending original", e);
+    }
+  }
+
   const formData = new FormData();
-  formData.append("file", fileInput.files[0]);
+  formData.append("file", uploadFile, file.name);
   formData.append("send_invites", qs("#sendInvitesOnUpload")?.checked ? "true" : "false");
 
   const response = await apiFetch("/admin/import-students", {

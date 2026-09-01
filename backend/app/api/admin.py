@@ -569,18 +569,46 @@ async def import_students_sheet(
                 detail=str(exc),
             ) from exc
 
-        inserted, updated, students = await _upsert_imported_students(rows, db)
+        # Deduplicate rows by email (case-insensitive) keeping first occurrence
+        seen_emails = set()
+        dedup_rows = []
+        for row in rows:
+            email_key = str(row.email).strip().lower()
+            if not email_key:
+                continue  # skip rows without email
+            if email_key in seen_emails:
+                continue
+            seen_emails.add(email_key)
+            dedup_rows.append(row)
+
+        inserted, updated, students = await _upsert_imported_students(dedup_rows, db)
 
         invite_jobs = _queue_invites(students) if send_invites else []
 
+        # Commit with integrity handling
         try:
             await db.commit()
-        except IntegrityError as exc:
+        except IntegrityError:
             await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Student import conflicts with existing database constraints.",
-            ) from exc
+            # Resolve conflicts by updating existing records for each student
+            for stu in students:
+                # stu may be new (no id) or existing
+                if stu.id is None:
+                    # find existing by email
+                    result = await db.execute(
+                        select(Student).where(func.lower(Student.email) == stu.email.lower())
+                    )
+                    existing = result.scalars().first()
+                    if existing:
+                        # update fields
+                        existing.name = stu.name
+                        existing.roll_no = stu.roll_no
+                        # keep other fields
+                        students[students.index(stu)] = existing
+                        updated += 1
+                        inserted -= 1
+                # else already existing, nothing
+            await db.commit()
 
         invites_sent = 0
         failed_invites: list[InviteFailure] = []
