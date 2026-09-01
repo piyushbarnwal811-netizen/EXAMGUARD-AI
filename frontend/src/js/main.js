@@ -15,11 +15,16 @@ let activeProblemIndex = 0;
 const qs = (selector) => document.querySelector(selector);
 
 function getToken() {
-  return localStorage.getItem("examguard_token");
+  return localStorage.getItem("examguard_token") ||
+         localStorage.getItem("token") ||
+         localStorage.getItem("adminToken") ||
+         "";
 }
 
 function clearStudentAccess() {
   localStorage.removeItem("examguard_token");
+  localStorage.removeItem("token");
+  localStorage.removeItem("adminToken");
   localStorage.removeItem("examguard_session_id");
   studentReadyNotified = false;
 }
@@ -50,6 +55,8 @@ function setExamStatus(message, type = "") {
 
 function saveToken(token, sessionId = null) {
   localStorage.setItem("examguard_token", token);
+  localStorage.setItem("token", token);
+  localStorage.setItem("adminToken", token);
   if (sessionId) {
     localStorage.setItem("examguard_session_id", String(sessionId));
   } else {
@@ -109,6 +116,8 @@ async function apiFetch(path, options = {}) {
       }
       if (response.status === 401) {
         localStorage.removeItem('examguard_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('adminToken');
         localStorage.removeItem('examguard_session_id');
         window.location.href = 'login.html';
         return response;
@@ -298,8 +307,8 @@ async function handleAdminLogin(event) {
       password: form.password.value,
     });
     saveToken(data.access_token);
-    await initializeAdminDashboard();
-    setStatus("Admin login successful. Dashboard ready.", "success");
+    // Redirect to admin dashboard page
+    window.location.href = "admin.html";
   } catch (error) {
     setStatus(error.message, "warning");
   }
