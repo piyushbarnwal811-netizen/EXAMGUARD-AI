@@ -1,5 +1,7 @@
 import smtplib
 import ssl
+import logging
+import time
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 import re
@@ -8,6 +10,8 @@ from typing import Iterable
 from app.config import get_settings
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
 
 
 class EmailConfigurationError(RuntimeError):
@@ -95,50 +99,71 @@ def send_email(to_email: str, subject: str, body: str) -> None:
     message["Subject"] = subject
     message.set_content(body)
 
-    use_ssl = settings.SMTP_USE_SSL or settings.SMTP_PORT == 465
+    # Determine primary and fallback connection strategies
+    primary_ssl = settings.SMTP_USE_SSL or settings.SMTP_PORT == 465
+    primary_port = settings.SMTP_PORT
+    fallback_ssl = not primary_ssl
+    fallback_port = 465 if primary_port == 587 else 587
+
+    strategies = [
+        ("primary", primary_ssl, primary_port),
+        ("fallback", fallback_ssl, fallback_port),
+    ]
+
     context = ssl.create_default_context()
+    max_attempts = 2  # per strategy
 
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        try:
-            if use_ssl:
-                smtp = smtplib.SMTP_SSL(
-                    settings.SMTP_HOST,
-                    settings.SMTP_PORT,
-                    timeout=settings.SMTP_TIMEOUT_SECONDS,
-                    context=context,
-                )
-            else:
-                smtp = smtplib.SMTP(
-                    settings.SMTP_HOST,
-                    settings.SMTP_PORT,
-                    timeout=settings.SMTP_TIMEOUT_SECONDS,
-                )
+    for label, use_ssl, port in strategies:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if use_ssl:
+                    smtp = smtplib.SMTP_SSL(
+                        settings.SMTP_HOST,
+                        port,
+                        timeout=settings.SMTP_TIMEOUT_SECONDS,
+                        context=context,
+                    )
+                else:
+                    smtp = smtplib.SMTP(
+                        settings.SMTP_HOST,
+                        port,
+                        timeout=settings.SMTP_TIMEOUT_SECONDS,
+                    )
 
-            with smtp as server:
-                server.ehlo()
-                if not use_ssl and settings.SMTP_STARTTLS:
-                    server.starttls(context=context)
+                with smtp as server:
                     server.ehlo()
-                server.login(smtp_user, smtp_password)
-                server.send_message(message)
-            return  # success
-        except smtplib.SMTPAuthenticationError as exc:
-            # auth errors are not transient
-            raise EmailDeliveryError(
-                "SMTP authentication failed. Check SMTP_USER and SMTP_PASSWORD; "
-                "for Gmail, use an app password."
-            ) from exc
-        except (smtplib.SMTPException, OSError) as exc:
-            if attempt == max_attempts:
-                raise EmailDeliveryError(f"SMTP delivery failed after {max_attempts} attempts: {exc}") from exc
-            # transient network error – wait a bit and retry
-            time.sleep(1.5 * attempt)
+                    if not use_ssl:
+                        server.starttls(context=context)
+                        server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.send_message(message)
+                logger.info("Email sent to %s via %s (port %s, ssl=%s)", to_email, label, port, use_ssl)
+                return  # success
+            except smtplib.SMTPAuthenticationError as exc:
+                # auth errors are not transient, abort all strategies
+                raise EmailDeliveryError(
+                    "SMTP authentication failed. Check SMTP_USER and SMTP_PASSWORD; "
+                    "for Gmail, use an app password."
+                ) from exc
+            except (smtplib.SMTPException, OSError) as exc:
+                if attempt == max_attempts:
+                    logger.warning("Strategy %s (port %s, ssl=%s) attempt %s failed: %s", label, port, use_ssl, attempt, exc)
+                    break  # try next strategy
+                # transient network error – wait a bit and retry
+                time.sleep(1.5 * attempt)
+
+    raise EmailDeliveryError(
+        f"SMTP delivery failed for {to_email} after trying primary and fallback strategies."
+    )
 
 
 def send_bulk_emails(recipients: Iterable[str], subject: str, body: str) -> int:
     sent = 0
     for recipient in recipients:
-        send_email(recipient, subject, body)
-        sent += 1
+        try:
+            send_email(recipient, subject, body)
+            sent += 1
+        except EmailDeliveryError as exc:
+            logger.error("Failed to send email to %s: %s", recipient, exc)
+            # continue with next recipient
     return sent
