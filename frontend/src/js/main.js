@@ -1303,9 +1303,18 @@ window.ExamGuardInviteGate = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  qs("#studentLoginForm")?.addEventListener("submit", handleStudentLogin);
-  qs("#invitePinForm")?.addEventListener("submit", verifyInviteWithPin);
-  qs("#adminLoginForm")?.addEventListener("submit", handleAdminLogin);
+  qs("#studentLoginForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleStudentLogin(e);
+  });
+  qs("#invitePinForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await verifyInviteWithPin(e);
+  });
+  qs("#adminLoginForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleAdminLogin(e);
+  });
   qs("#csvUploadForm")?.addEventListener("submit", async (event) => {
     try {
       await uploadCsv(event);
