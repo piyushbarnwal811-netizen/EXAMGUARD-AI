@@ -585,14 +585,8 @@ async def import_students_sheet(
     failed_invites: list[InviteFailure] = []
     if invite_jobs:
         _ensure_invite_email_configured()
-        # Offload email sending to background to avoid request timeout
-        async def _send_background():
-            nonlocal invites_sent, failed_invites
-            sent, failures = await _send_invite_jobs(invite_jobs)
-            invites_sent = sent
-            failed_invites = failures
-            await db.commit()
-        background_tasks.add_task(_send_background)
+        invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
+        await db.commit()
 
     return StudentImportResult(
         filename=file.filename,
