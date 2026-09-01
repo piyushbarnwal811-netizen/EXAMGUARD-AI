@@ -86,19 +86,32 @@ async function apiFetch(path, options = {}) {
   const maxTotalMs = 45000; // 45 seconds total backoff
   const start = Date.now();
   let attempt = 0;
+  const token = getToken();
+  const isFormData = options.body instanceof FormData;
+  const defaultHeaders = {
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+    'Authorization': token ? `Bearer ${token}` : '',
+    ...(options.headers || {})
+  };
+  const fetchOptions = { ...options, headers: defaultHeaders };
   while (true) {
     try {
-      const response = await fetch(`${API_BASE}${path}`, options);
+      const response = await fetch(`${API_BASE}${path}`, fetchOptions);
       if (response.status === 503) {
         const elapsed = Date.now() - start;
         if (elapsed >= maxTotalMs) {
           return response; // give up, let caller handle
         }
-        // exponential backoff with cap
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
         await new Promise((r) => setTimeout(r, delay));
         attempt++;
         continue;
+      }
+      if (response.status === 401) {
+        localStorage.removeItem('examguard_token');
+        localStorage.removeItem('examguard_session_id');
+        window.location.href = 'login.html';
+        return response;
       }
       return response;
     } catch {
@@ -1242,6 +1255,10 @@ async function saveCodingProblem(event) {
 
 async function initializeAdminDashboard() {
   if (!qs("#adminLoginForm")) return;
+  if (!getToken()) {
+    window.location.href = 'admin-login.html';
+    return;
+  }
   await Promise.all([
     loadContestSchedule(),
     loadCodingProblem(),
