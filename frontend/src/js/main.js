@@ -564,10 +564,23 @@ async function generatePins() {
 async function sendInvites() {
   try {
     const data = await postJson("/admin/send-invites", {});
-    renderImportResult(data, "[data-invite-result]");
+    // New response format: { status, message, sent, failed, failed_invites? }
+    if (data.status === "warning") {
+      setStatus(data.message, "warning");
+      return;
+    }
+    // Success case
+    renderImportResult({
+      total_students: data.sent + data.failed,
+      inserted: 0,
+      updated: 0,
+      invites_sent: data.sent,
+      invites_failed: data.failed,
+      failed_invites: data.failed_invites || [],
+    }, "[data-invite-result]");
     setStatus(
-      `Invites sent: ${data.invites_sent}, failed: ${data.invites_failed}.`,
-      data.invites_failed ? "warning" : "success"
+      `Invites sent: ${data.sent}, failed: ${data.failed}.`,
+      data.failed ? "warning" : "success"
     );
   } catch (error) {
     setStatus(error.message, "warning");

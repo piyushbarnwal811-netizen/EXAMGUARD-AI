@@ -599,19 +599,21 @@ async def import_students_sheet(
     )
 
 
-@router.post("/send-invites", response_model=InviteBatchResult)
+@router.post("/send-invites")
 async def send_student_invites(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
-) -> InviteBatchResult:
+):
     try:
         result = await db.execute(select(Student).order_by(Student.roll_no))
         students = result.scalars().all()
         if not students:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Upload students before sending invites.",
-            )
+            return {
+                "status": "warning",
+                "message": "No pending students found to send invites. Please upload a student CSV first.",
+                "sent": 0,
+                "failed": 0,
+            }
 
         _ensure_invite_email_configured()
         invite_jobs = _queue_invites(students)
@@ -627,12 +629,15 @@ async def send_student_invites(
         invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
         await db.commit()
 
-        return InviteBatchResult(
-            total_students=len(students),
-            invites_sent=invites_sent,
-            invites_failed=len(failed_invites),
-            failed_invites=failed_invites,
-        )
+        return {
+            "status": "success",
+            "message": f"Invites sent: {invites_sent}, failed: {len(failed_invites)}.",
+            "sent": invites_sent,
+            "failed": len(failed_invites),
+            "failed_invites": [
+                {"email": item.email, "error": item.error} for item in failed_invites
+            ],
+        }
     except HTTPException:
         raise
     except Exception as exc:
