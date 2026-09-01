@@ -548,55 +548,64 @@ async def import_students_sheet(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     _admin: dict[str, object] = Depends(require_admin),
 ) -> StudentImportResult:
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please upload a student sheet.",
+    try:
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please upload a student sheet.",
+            )
+
+        content = await file.read()
+        try:
+            rows = await run_in_threadpool(parse_student_sheet, content, file.filename)
+        except StudentSheetValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": exc.message, "errors": exc.errors},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        inserted, updated, students = await _upsert_imported_students(rows, db)
+
+        invite_jobs = _queue_invites(students) if send_invites else []
+
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Student import conflicts with existing database constraints.",
+            ) from exc
+
+        invites_sent = 0
+        failed_invites: list[InviteFailure] = []
+        if invite_jobs:
+            _ensure_invite_email_configured()
+            invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
+            await db.commit()
+
+        return StudentImportResult(
+            filename=file.filename,
+            inserted=inserted,
+            updated=updated,
+            total_students=len(students),
+            invites_sent=invites_sent,
+            invites_failed=len(failed_invites),
+            failed_invites=failed_invites,
         )
-
-    content = await file.read()
-    try:
-        rows = await run_in_threadpool(parse_student_sheet, content, file.filename)
-    except StudentSheetValidationError as exc:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Catch any unexpected error and return a clean JSON response
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": exc.message, "errors": exc.errors},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Import failed: {exc}",
         ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-
-    inserted, updated, students = await _upsert_imported_students(rows, db)
-
-    invite_jobs = _queue_invites(students) if send_invites else []
-
-    try:
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Student import conflicts with existing database constraints.",
-        ) from exc
-
-    invites_sent = 0
-    failed_invites: list[InviteFailure] = []
-    if invite_jobs:
-        _ensure_invite_email_configured()
-        invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
-        await db.commit()
-
-    return StudentImportResult(
-        filename=file.filename,
-        inserted=inserted,
-        updated=updated,
-        total_students=len(students),
-        invites_sent=invites_sent,
-        invites_failed=len(failed_invites),
-        failed_invites=failed_invites,
-    )
 
 
 @router.post("/send-invites")
