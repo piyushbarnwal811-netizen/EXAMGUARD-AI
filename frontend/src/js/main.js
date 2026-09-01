@@ -301,10 +301,27 @@ async function handleAdminLogin(event) {
   event.preventDefault();
   const form = event.currentTarget;
 
+  // Support both name="username" and name="email" for the identifier field
+  const usernameInput = form.querySelector('[name="username"]') || form.querySelector('[name="email"]');
+  const passwordInput = form.querySelector('[name="password"]');
+
+  if (!usernameInput || !passwordInput) {
+    setStatus("Login form is missing username/email or password fields.", "warning");
+    return;
+  }
+
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
+
+  if (!username || !password) {
+    setStatus("Please enter both username/email and password.", "warning");
+    return;
+  }
+
   try {
     const data = await postJson("/auth/admin-login", {
-      username: form.username.value.trim(),
-      password: form.password.value,
+      username,
+      password,
     });
     saveToken(data.access_token);
     // Redirect to admin dashboard page
