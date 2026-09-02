@@ -20,13 +20,17 @@ def hash_invite_token(token: str) -> str:
 def build_exam_invite_link(token: str) -> str:
     settings = get_settings()
     parts = urlsplit(settings.FRONTEND_EXAM_URL)
+    # Ensure the path points to the exam page
+    path = parts.path.rstrip('/')
+    if not path.endswith('/exam'):
+        path = f"{path}/exam" if path else "/exam"
     query = parse_qsl(parts.query, keep_blank_values=True)
     query.append(("invite", token))
     return urlunsplit(
         (
             parts.scheme,
             parts.netloc,
-            parts.path,
+            path,
             urlencode(query),
             parts.fragment,
         )
