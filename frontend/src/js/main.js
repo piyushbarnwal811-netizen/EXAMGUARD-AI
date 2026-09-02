@@ -96,7 +96,9 @@ function backendUnavailableMessage() {
 const AUTH_PATHS = ["/auth/admin-login", "/auth/verify-pin", "/auth/verify-invite"];
 
 async function apiFetch(path, options = {}) {
-  const maxTotalMs = AUTH_PATHS.includes(path) ? 8000 : 45000;
+  const maxTotalMs = 60000;
+  const maxRetries = 2;
+  const retryDelay = 3000;
   const start = Date.now();
   let attempt = 0;
   const token = getToken();
@@ -112,11 +114,11 @@ async function apiFetch(path, options = {}) {
       const response = await fetch(`${API_BASE}${path}`, fetchOptions);
       if (response.status === 503 && !AUTH_PATHS.includes(path)) {
         const elapsed = Date.now() - start;
-        if (elapsed >= maxTotalMs) {
+        if (elapsed >= maxTotalMs || attempt >= maxRetries) {
           return response;
         }
-        const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
-        await new Promise((r) => setTimeout(r, delay));
+        setStatus("Connecting to server...", "info");
+        await new Promise((r) => setTimeout(r, retryDelay));
         attempt++;
         continue;
       }
@@ -131,11 +133,11 @@ async function apiFetch(path, options = {}) {
       return response;
     } catch {
       const elapsed = Date.now() - start;
-      if (elapsed >= maxTotalMs) {
+      if (elapsed >= maxTotalMs || attempt >= maxRetries) {
         throw new Error(backendUnavailableMessage());
       }
-      const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
-      await new Promise((r) => setTimeout(r, delay));
+      setStatus("Connecting to server...", "info");
+      await new Promise((r) => setTimeout(r, retryDelay));
       attempt++;
     }
   }
