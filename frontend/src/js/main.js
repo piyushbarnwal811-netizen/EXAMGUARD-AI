@@ -1391,7 +1391,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const isExamPage = window.location.pathname.includes('exam.html');
   const isLoginPage = window.location.pathname.includes('login.html');
   
-  if ((isAdminPage || isExamPage) && !getToken() && !isLoginPage) {
+  if (isExamPage && !getToken() && !isLoginPage) {
     window.location.href = 'login.html';
     return;
   }
