@@ -3,17 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Student Login | ExamGuard Pro</title>
+    <title>Login | ExamGuard Pro</title>
     <link rel="stylesheet" href="../css/style.css" />
+    <style>
+      .tabs { display:flex; gap:8px; margin-bottom:16px; }
+      .tab-btn { flex:1; padding:10px; cursor:pointer; background:#f0f0f0; border:none; border-radius:4px; }
+      .tab-btn.active { background:#0066cc; color:#fff; }
+      .form-wrapper { display:none; }
+      .form-wrapper.active { display:block; }
+    </style>
   </head>
   <body>
     <main class="shell auth-shell">
       <section class="panel">
-        <p class="eyebrow">Student access</p>
-        <h1>ExamGuard Pro</h1>
-        <p class="muted">Open your emailed exam invitation link to begin, or enter a PIN if your admin issued one.</p>
+        <div class="tabs">
+          <button type="button" class="tab-btn active" data-tab="student">Student Portal</button>
+          <button type="button" class="tab-btn" data-tab="admin">Admin Portal</button>
+        </div>
 
-        <form id="studentLoginForm">
+        <form id="student-form" class="form-wrapper active">
+          <p class="eyebrow">Student access</p>
+          <h1>ExamGuard Pro</h1>
+          <p class="muted">Open your emailed exam invitation link to begin, or enter a PIN if your admin issued one.</p>
+
           <label>
             Roll Number
             <input name="roll_no" type="text" placeholder="ROLL001" required />
@@ -25,9 +37,22 @@
           <button type="submit">Login</button>
         </form>
 
-        <div class="actions">
-          <a href="admin.html">Admin Login</a>
-        </div>
+        <form id="admin-form" class="form-wrapper">
+          <p class="eyebrow">Admin access</p>
+          <h1>ExamGuard Pro</h1>
+          <p class="muted">Sign in with your admin credentials.</p>
+
+          <label>
+            Email / Username
+            <input name="email" type="text" placeholder="admin@example.com" required />
+          </label>
+          <label>
+            Password
+            <input name="password" type="password" required />
+          </label>
+          <button type="submit">Login</button>
+        </form>
+
         <p class="status" data-status>Waiting for login.</p>
       </section>
     </main>

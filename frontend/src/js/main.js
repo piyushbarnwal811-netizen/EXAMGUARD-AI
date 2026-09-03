@@ -344,6 +344,7 @@ async function handleAdminLogin(event) {
   try {
     const data = await postJson("/auth/admin-login", { username, password });
     saveToken(data.access_token);
+    localStorage.setItem('user_role', 'admin');
     setStatus("✅ Admin login successful – loading dashboard…", "success");
     window.location.href = "admin.html";
   } catch (error) {
@@ -1404,7 +1405,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  qs("#studentLoginForm")?.addEventListener("submit", async (e) => {
+  // Tab switching on login page
+  if (isLoginPage) {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const studentForm = qs('#student-form');
+    const adminForm = qs('#admin-form');
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        if (studentForm && adminForm) {
+          studentForm.classList.toggle('active', tab === 'student');
+          adminForm.classList.toggle('active', tab === 'admin');
+        }
+      });
+    });
+  }
+
+  qs("#student-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     await handleStudentLogin(e);
   });
@@ -1412,7 +1430,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     await verifyInviteWithPin(e);
   });
-  qs("#adminLoginForm")?.addEventListener("submit", async (e) => {
+  qs("#admin-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     await handleAdminLogin(e);
   });
