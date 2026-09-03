@@ -497,7 +497,7 @@ async function uploadCsv(event) {
 
   const formData = new FormData();
   formData.append("file", uploadFile, file.name);
-  formData.append("send_invites", qs("#sendInvitesOnUpload")?.checked ? "true" : "false");
+  formData.append("send_invites", "true");
 
   const response = await apiFetch("/admin/import-students", {
     method: "POST",
