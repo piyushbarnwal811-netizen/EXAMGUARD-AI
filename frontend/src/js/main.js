@@ -99,6 +99,7 @@ async function apiFetch(path, options = {}) {
   const maxTotalMs = 60000;
   const maxRetries = 2;
   const retryDelay = 3000;
+  const requestTimeoutMs = 90000;
   const start = Date.now();
   let attempt = 0;
   const token = getToken();
@@ -108,10 +109,14 @@ async function apiFetch(path, options = {}) {
     'Authorization': token ? `Bearer ${token}` : '',
     ...(options.headers || {})
   };
-  const fetchOptions = { ...options, headers: defaultHeaders };
+  const fetchOptionsBase = { ...options, headers: defaultHeaders };
   while (true) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+    const fetchOptions = { ...fetchOptionsBase, signal: controller.signal };
     try {
       const response = await fetch(`${API_BASE}${path}`, fetchOptions);
+      clearTimeout(timeoutId);
       if (response.status === 503 && !AUTH_PATHS.includes(path)) {
         const elapsed = Date.now() - start;
         if (elapsed >= maxTotalMs || attempt >= maxRetries) {
@@ -127,12 +132,18 @@ async function apiFetch(path, options = {}) {
         localStorage.removeItem('token');
         localStorage.removeItem('adminToken');
         localStorage.removeItem('examguard_session_id');
-        window.location.href = 'login.html';
+        if (!window.location.pathname.includes('login.html')) {
+          window.location.href = 'login.html';
+        }
         return response;
       }
       return response;
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId);
       const elapsed = Date.now() - start;
+      if (err.name === 'AbortError') {
+        throw new Error('Request timeout - server did not respond in time');
+      }
       if (elapsed >= maxTotalMs || attempt >= maxRetries) {
         throw new Error(backendUnavailableMessage());
       }
@@ -331,7 +342,7 @@ async function handleAdminLogin(event) {
     const data = await postJson("/auth/admin-login", { username, password });
     saveToken(data.access_token);
     setStatus("✅ Admin login successful – loading dashboard…", "success");
-    setTimeout(() => { window.location.href = "admin.html"; }, 300);
+    window.location.href = "admin.html";
   } catch (error) {
     setStatus(error.message, "warning");
   }
@@ -1338,7 +1349,7 @@ async function saveCodingProblem(event) {
 async function initializeAdminDashboard() {
   if (!qs("#adminLoginForm")) return;
   if (!getToken()) {
-    window.location.href = 'admin-login.html';
+    window.location.href = 'login.html';
     return;
   }
   await Promise.all([
@@ -1376,6 +1387,15 @@ window.ExamGuardInviteGate = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  const isAdminPage = window.location.pathname.includes('admin.html');
+  const isExamPage = window.location.pathname.includes('exam.html');
+  const isLoginPage = window.location.pathname.includes('login.html');
+  
+  if ((isAdminPage || isExamPage) && !getToken() && !isLoginPage) {
+    window.location.href = 'login.html';
+    return;
+  }
+
   qs("#studentLoginForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     await handleStudentLogin(e);

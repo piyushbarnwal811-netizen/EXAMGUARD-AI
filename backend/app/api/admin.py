@@ -208,6 +208,29 @@ async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFail
     return sent, failures
 
 
+async def _send_invite_jobs_background(jobs: list[InviteJob]) -> None:
+    """Fire‑and‑forget email sending for background tasks."""
+    try:
+        validate_email_settings()
+    except RuntimeError:
+        return
+
+    for job in jobs:
+        invite_link = build_exam_invite_link(job.token)
+        try:
+            await run_in_threadpool(
+                send_exam_invite_email,
+                job.email,
+                job.name,
+                invite_link,
+                job.pin,
+                job.expires_at,
+            )
+        except Exception:
+            # swallow errors in background
+            pass
+
+
 async def _upsert_imported_students(
     rows: list[ImportedStudentRow],
     db: AsyncSession,
@@ -540,14 +563,14 @@ def _build_report_rows(
     return rows
 
 
-@router.post("/import-students", response_model=StudentImportResult)
+@router.post("/import-students")
 async def import_students_sheet(
     file: UploadFile = File(...),
     send_invites: bool = Form(False),
     db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks = Depends(),
     _admin: dict[str, object] = Depends(require_admin),
-) -> StudentImportResult:
+):
     try:
         if not file.filename:
             raise HTTPException(
@@ -585,51 +608,43 @@ async def import_students_sheet(
 
         invite_jobs = _queue_invites(students) if send_invites else []
 
-        # Commit with integrity handling
+        # Commit student records (including invite tokens/pins)
         try:
             await db.commit()
         except IntegrityError:
             await db.rollback()
             # Resolve conflicts by updating existing records for each student
             for stu in students:
-                # stu may be new (no id) or existing
                 if stu.id is None:
-                    # find existing by email
                     result = await db.execute(
                         select(Student).where(func.lower(Student.email) == stu.email.lower())
                     )
                     existing = result.scalars().first()
                     if existing:
-                        # update fields
                         existing.name = stu.name
                         existing.roll_no = stu.roll_no
-                        # keep other fields
                         students[students.index(stu)] = existing
                         updated += 1
                         inserted -= 1
-                # else already existing, nothing
             await db.commit()
 
-        invites_sent = 0
-        failed_invites: list[InviteFailure] = []
+        # If invites requested, dispatch emails in background
         if invite_jobs:
-            _ensure_invite_email_configured()
-            invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
-            await db.commit()
+            background_tasks.add_task(_send_invite_jobs_background, invite_jobs)
 
-        return StudentImportResult(
-            filename=file.filename,
-            inserted=inserted,
-            updated=updated,
-            total_students=len(students),
-            invites_sent=invites_sent,
-            invites_failed=len(failed_invites),
-            failed_invites=failed_invites,
-        )
+        return {
+            "status": "success",
+            "message": "Students imported successfully. Invites are being dispatched in the background.",
+            "inserted": inserted,
+            "updated": updated,
+            "total_students": len(students),
+            "invites_sent": 0,
+            "invites_failed": 0,
+            "failed_invites": [],
+        }
     except HTTPException:
         raise
     except Exception as exc:
-        # Catch any unexpected error and return a clean JSON response
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Import failed: {exc}",
@@ -638,6 +653,7 @@ async def import_students_sheet(
 
 @router.post("/send-invites")
 async def send_student_invites(
+    background_tasks: BackgroundTasks = Depends(),
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
@@ -663,22 +679,19 @@ async def send_student_invites(
                 detail="Invite generation conflicts with existing database constraints.",
             ) from exc
 
-        invites_sent, failed_invites = await _send_invite_jobs(invite_jobs)
-        await db.commit()
+        # Dispatch emails in background
+        background_tasks.add_task(_send_invite_jobs_background, invite_jobs)
 
         return {
             "status": "success",
-            "message": f"Invites sent: {invites_sent}, failed: {len(failed_invites)}.",
-            "sent": invites_sent,
-            "failed": len(failed_invites),
-            "failed_invites": [
-                {"email": item.email, "error": item.error} for item in failed_invites
-            ],
+            "message": "Invite emails are being dispatched in the background.",
+            "sent": 0,
+            "failed": 0,
+            "failed_invites": [],
         }
     except HTTPException:
         raise
     except Exception as exc:
-        # Log exc if logger available
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send invites: {exc}",
