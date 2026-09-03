@@ -570,7 +570,7 @@ async def import_students_sheet(
     db: AsyncSession = Depends(get_db),
     background_tasks: BackgroundTasks = Depends(),
     _admin: dict[str, object] = Depends(require_admin),
-):
+) -> dict:
     try:
         if not file.filename:
             raise HTTPException(
@@ -656,7 +656,7 @@ async def send_student_invites(
     background_tasks: BackgroundTasks = Depends(),
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
-):
+) -> dict:
     try:
         result = await db.execute(select(Student).order_by(Student.roll_no))
         students = result.scalars().all()
