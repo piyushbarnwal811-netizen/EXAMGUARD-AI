@@ -563,7 +563,7 @@ def _build_report_rows(
     return rows
 
 
-@router.post("/import-students")
+@router.post("/import-students", response_model=None)
 async def import_students_sheet(
     file: UploadFile = File(...),
     send_invites: bool = Form(False),
@@ -651,7 +651,7 @@ async def import_students_sheet(
         ) from exc
 
 
-@router.post("/send-invites")
+@router.post("/send-invites", response_model=None)
 async def send_student_invites(
     background_tasks: BackgroundTasks = Depends(),
     db: AsyncSession = Depends(get_db),
