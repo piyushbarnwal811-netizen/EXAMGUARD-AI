@@ -58,6 +58,11 @@ async def api_health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/ping")
+async def ping() -> dict[str, str]:
+    return {"status": "ok", "message": "Server is awake"}
+
+
 frontend_dir = PROJECT_DIR / "frontend"
 if frontend_dir.exists():
     app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")

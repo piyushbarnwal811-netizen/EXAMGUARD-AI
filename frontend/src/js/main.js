@@ -96,10 +96,10 @@ function backendUnavailableMessage() {
 const AUTH_PATHS = ["/auth/admin-login", "/auth/verify-pin", "/auth/verify-invite"];
 
 async function apiFetch(path, options = {}) {
-  const maxTotalMs = 60000;
-  const maxRetries = 2;
+  const maxTotalMs = 180000; // 3 minutes total
+  const maxRetries = 3;
   const retryDelay = 3000;
-  const requestTimeoutMs = 90000;
+  const requestTimeoutMs = 120000; // 120 seconds per request
   const start = Date.now();
   let attempt = 0;
   const token = getToken();
@@ -141,15 +141,18 @@ async function apiFetch(path, options = {}) {
     } catch (err) {
       clearTimeout(timeoutId);
       const elapsed = Date.now() - start;
-      if (err.name === 'AbortError') {
-        throw new Error('Request timeout - server did not respond in time');
+      // Treat abort (timeout) or network errors as transient
+      const isTransient = err.name === 'AbortError' || err instanceof TypeError;
+      if (isTransient) {
+        if (elapsed >= maxTotalMs || attempt >= maxRetries) {
+          throw new Error(backendUnavailableMessage());
+        }
+        setStatus("Waking up server... Please wait a moment.", "info");
+        await new Promise((r) => setTimeout(r, retryDelay));
+        attempt++;
+        continue;
       }
-      if (elapsed >= maxTotalMs || attempt >= maxRetries) {
-        throw new Error(backendUnavailableMessage());
-      }
-      setStatus("Connecting to server...", "info");
-      await new Promise((r) => setTimeout(r, retryDelay));
-      attempt++;
+      throw err;
     }
   }
 }
@@ -309,8 +312,8 @@ async function handleStudentLogin(event) {
   try {
     const data = await postJson("/auth/verify-pin", { roll_no: rollNo, pin });
     saveToken(data.access_token, data.session_id);
-    setStatus("Login successful. Opening exam...", "success");
-    window.location.href = "exam.html";
+    setStatus("Login successful. Opening dashboard...", "success");
+    window.location.href = "student-dashboard.html";
   } catch (error) {
     setStatus(error.message, "warning");
   }
@@ -1391,6 +1394,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const isExamPage = window.location.pathname.includes('exam.html');
   const isLoginPage = window.location.pathname.includes('login.html');
   
+  // Wake up the Render backend on login/admin pages
+  if (isLoginPage || isAdminPage) {
+    fetch(`${API_BASE}/ping`).catch(() => {});
+  }
+
   if (isExamPage && !getToken() && !isLoginPage) {
     window.location.href = 'login.html';
     return;

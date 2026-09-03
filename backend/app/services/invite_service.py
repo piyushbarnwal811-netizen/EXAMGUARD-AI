@@ -19,22 +19,8 @@ def hash_invite_token(token: str) -> str:
 
 def build_exam_invite_link(token: str) -> str:
     settings = get_settings()
-    parts = urlsplit(settings.FRONTEND_EXAM_URL)
-    # Ensure the path points to the exam page
-    path = parts.path.rstrip('/')
-    if not path.endswith('/exam'):
-        path = f"{path}/exam" if path else "/exam"
-    query = parse_qsl(parts.query, keep_blank_values=True)
-    query.append(("invite", token))
-    return urlunsplit(
-        (
-            parts.scheme,
-            parts.netloc,
-            path,
-            urlencode(query),
-            parts.fragment,
-        )
-    )
+    base = settings.FRONTEND_URL.rstrip('/')
+    return f"{base}/student-exam.html?token={token}"
 
 
 def _format_expiry(expires_at: datetime) -> str:
@@ -49,11 +35,9 @@ def build_invite_email_body(
 ) -> str:
     return (
         f"Hello {student_name},\n\n"
-        "You have been invited to take your ExamGuard AI exam.\n\n"
-        "Open this secure access link to begin:\n"
+        "Click the link below to launch your ExamGuard AI Secure Exam Portal:\n"
         f"{invite_link}\n\n"
-        "Use this PIN when the exam page asks for it:\n"
-        f"{pin}\n\n"
+        f"Your PIN: {pin}\n\n"
         f"This link expires on {_format_expiry(expires_at)} and can be used once.\n"
         "If you were not expecting this invitation, please contact your exam admin.\n"
     )
