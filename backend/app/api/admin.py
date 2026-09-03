@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -39,7 +40,7 @@ from app.schemas.student import (
     StudentCsvRow,
     StudentImportResult,
 )
-from app.services.email_service import validate_email_settings
+from app.services.email_service import validate_email_settings, EmailConfigurationError, EmailDeliveryError
 from app.services.excel_service import generate_excel_report
 from app.services.invite_service import (
     build_exam_invite_link,
@@ -212,6 +213,9 @@ async def _send_invite_jobs_background(jobs: list[InviteJob]) -> None:
     """Fire‑and‑forget email sending for background tasks."""
     try:
         validate_email_settings()
+    except EmailConfigurationError as exc:
+        logger.error("Email not configured: %s", exc)
+        return
     except RuntimeError:
         return
 
@@ -226,9 +230,12 @@ async def _send_invite_jobs_background(jobs: list[InviteJob]) -> None:
                 job.pin,
                 job.expires_at,
             )
-        except Exception:
-            # swallow errors in background
-            pass
+        except EmailConfigurationError as exc:
+            logger.error("SMTP configuration error for %s: %s", job.email, exc)
+        except EmailDeliveryError as exc:
+            logger.error("SMTP delivery error for %s: %s", job.email, exc)
+        except Exception as exc:
+            logger.error("Unexpected error sending invite to %s: %s", job.email, exc)
 
 
 async def _upsert_imported_students(
@@ -286,6 +293,7 @@ async def _upsert_imported_students(
         if existing:
             existing.name = row.name
             existing.email = email
+            existing.invite_status = "PENDING"
             if row.roll_no and existing.roll_no != row.roll_no:
                 reserved_roll_numbers.discard(existing.roll_no)
                 existing.roll_no = row.roll_no
@@ -306,6 +314,7 @@ async def _upsert_imported_students(
             email=email,
             secret_pin=None,
             is_pin_used=False,
+            invite_status="PENDING",
         )
         db.add(student)
         existing_by_email[email] = student
@@ -658,7 +667,11 @@ async def send_student_invites(
     _admin: dict[str, object] = Depends(require_admin),
 ):
     try:
-        result = await db.execute(select(Student).order_by(Student.roll_no))
+        result = await db.execute(
+            select(Student)
+            .where(or_(Student.invite_status == "PENDING", Student.invite_status.is_(None)))
+            .order_by(Student.roll_no)
+        )
         students = result.scalars().all()
         if not students:
             return {
