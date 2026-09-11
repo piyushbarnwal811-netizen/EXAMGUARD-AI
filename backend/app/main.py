@@ -77,12 +77,31 @@ async def download_safe_browser():
 
 # SEB config download endpoint
 @app.get("/api/download/seb-config")
-async def download_seb_config():
-    file_path = PROJECT_DIR / "assets" / "ExamConfig.seb"
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="SEB config not found")
-    return FileResponse(path=file_path, filename="ExamConfig.seb", media_type="application/octet-stream")
 
+
+
+
+
+
+async def download_seb_config(token: str | None = None):
+    from app.config import get_settings
+    import re
+    settings = get_settings()
+    base = getattr(settings, "FRONTEND_URL", "https://examguard-ai.vercel.app").rstrip('/')
+    # Token aaya to usi token ke saath StartURL banao
+    start_url = f"{base}/exam?token={token}" if token else f"{base}/exam"
+
+    template_path = PROJECT_DIR / "assets" / "ExamConfig.seb"
+    if template_path.exists():
+        content = template_path.read_text(encoding="utf-8")
+        # startURL ko replace karo
+        content = re.sub(r'<key name="startURL">.*?</key>', f'<key name="startURL">{start_url}</key>', content, flags=re.DOTALL)
+        content = re.sub(r'https://examguard-ai-317p.onrender.com', start_url, content)
+    else:
+        content = f'<seb><config><key name="startURL">{start_url}</key></config></seb>'
+
+    from fastapi.responses import Response
+    return Response(content=content, media_type="application/x-safe-exam-browser-config", headers={"Content-Disposition": 'attachment; filename="ExamConfig.seb"'})
 app.include_router(auth.router, prefix="/api")
 app.include_router(contest.router, prefix="/api")
 app.include_router(exam.router, prefix="/api")

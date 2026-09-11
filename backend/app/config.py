@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 
-
 class Settings(BaseSettings):
     APP_NAME: str = "ExamGuard Pro"
     SECRET_KEY: str = "change-this-secret-key"
@@ -33,6 +32,7 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
     SMTP_STARTTLS: bool = True
     SMTP_TIMEOUT_SECONDS: int = 20
+    FRONTEND_URL: str = "https://examguard-ai.vercel.app" # isme /exam mat lagao
     FRONTEND_EXAM_URL: str = "https://examguard-ai.vercel.app/exam"
     EXAM_INVITE_EXPIRE_HOURS: int = 72
 
@@ -50,14 +50,13 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-flash-latest"
     GEMINI_TIMEOUT_SECONDS: int = 90
     GEMINI_REMOTE_ENABLED: bool = True
-
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

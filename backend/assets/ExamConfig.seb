@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <seb version="2.0">
   <config>
-    <key name="startURL">https://examguard-ai-317p.onrender.com</key>
+    <key name="startURL">https://examguard-ai.vercel.app/exam</key>
     <key name="fullscreen">true</key>
     <key name="disableTaskSwitching">true</key>
     <key name="disableVirtualKeyboard">true</key>

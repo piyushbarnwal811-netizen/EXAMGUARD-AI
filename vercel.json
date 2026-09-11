@@ -1,6 +1,14 @@
 {
   "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
   "rewrites": [
+    { "source": "/exam", "destination": "/src/pages/exam.html" },
+    { "source": "/student-exam", "destination": "/src/pages/student-exam.html" },
+    { "source": "/login", "destination": "/src/pages/login.html" },
+    { "source": "/admin", "destination": "/src/pages/admin.html" },
+    { "source": "/src/:path*", "destination": "/src/:path*" },
+    { "source": "/assets/:path*", "destination": "/assets/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
