@@ -165,6 +165,20 @@ def test_invite_verification_starts_exam_session(client):
     assert body["session_id"] is not None
 
 
+def test_student_login_accepts_common_alias_fields(client):
+    run(_create_student(roll_no="ALIAS001", email="alias@example.com", pin="ALIAS1"))
+
+    response = client.post(
+        "/api/auth/verify-pin",
+        json={"rollNo": "ALIAS001", "studentPin": "ALIAS1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "student"
+    assert body["roll_no"] == "ALIAS001"
+
+
 def test_send_invites_generates_pin_and_email(client, monkeypatch):
     from app.api import admin as admin_api
 
@@ -238,6 +252,113 @@ def test_email_settings_are_sanitized_for_gmail_app_passwords():
         "admin.sender@gmail.com",
         "smtp.gmail.com",
     ) == "ExamGuard <admin.sender@gmail.com>"
+
+
+def test_admin_email_test_sends_to_requested_address(client, monkeypatch):
+    from app.api import admin as admin_api
+
+    token = _admin_token(client)
+    sent = []
+    monkeypatch.setattr(admin_api, "validate_email_settings", lambda: None)
+    monkeypatch.setattr(
+        admin_api,
+        "send_email",
+        lambda to_email, subject, body: sent.append((to_email, subject, body)),
+    )
+
+    response = client.post(
+        "/api/admin/email-test",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"to_email": "admin@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "sent"
+    assert sent[0][0] == "admin@example.com"
+
+
+def test_student_can_request_ai_debug_hint(client, monkeypatch):
+    from app.api import contest as contest_api
+    from app.schemas.coding import CodeDebugOut
+
+    run(_create_student())
+    student_data = _student_token(client)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(
+        contest_api,
+        "_generate_code_debug",
+        lambda *_args: CodeDebugOut(
+            error_line=3,
+            error_summary="Name is not defined",
+            detailed_explanation="Variable ka naam define nahi hua.",
+            fix_hint="Check the spelling and declaration before this line.",
+        ),
+    )
+
+    response = client.post(
+        "/api/contest/debug",
+        headers={"Authorization": f"Bearer {student_data['access_token']}"},
+        json={
+            "language": "python",
+            "source_code": "print(total)",
+            "error_logs": "NameError: name 'total' is not defined",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["error_line"] == 3
+    assert "full corrected code" not in response.text.lower()
+
+
+def test_import_reports_invite_delivery_results(client, monkeypatch):
+    from app.api import admin as admin_api
+
+    token = _admin_token(client)
+    sent_messages = []
+    monkeypatch.setattr(admin_api, "validate_email_settings", lambda: None)
+    monkeypatch.setattr(
+        admin_api,
+        "send_exam_invite_email",
+        lambda to_email, *_args: sent_messages.append(to_email),
+    )
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["name", "email"])
+    sheet.append(["Invite Student", "import.invite@example.com"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    response = client.post(
+        "/api/admin/import-students",
+        headers={"Authorization": f"Bearer {token}"},
+        files={
+            "file": (
+                "invite-students.xlsx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["invites_sent"] == 1
+    assert body["invites_failed"] == 0
+    assert sent_messages == ["import.invite@example.com"]
+
+
+def test_invite_html_escapes_student_content():
+    from app.services.invite_service import build_invite_email_html
+
+    body = build_invite_email_html(
+        "<Student>",
+        "https://example.com/exam?token=test&invite=test",
+        "ABC123",
+        datetime.now(timezone.utc),
+    )
+
+    assert "&lt;Student&gt;" in body
+    assert "<Student>" not in body
 
 
 def test_admin_exam_history_lists_scheduled_exams(client):

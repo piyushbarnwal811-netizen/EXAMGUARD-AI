@@ -702,6 +702,29 @@ function renderResults(data) {
   ].join("");
 }
 
+async function requestAiDebug(errorLogs) {
+  const panel = codingQs("[data-ai-debugger]");
+  if (!panel) return;
+  panel.hidden = false;
+  panel.textContent = "Analyzing compiler error...";
+  try {
+    const result = await codingPost("/contest/debug", {
+      language: codingState.currentLanguage,
+      source_code: codingState.editor.getValue(),
+      error_logs: errorLogs.slice(0, 8000),
+    });
+    panel.innerHTML = `
+      <h3>AI Debug Hint</h3>
+      <p><strong>${htmlEscape(result.error_summary)}</strong></p>
+      ${result.error_line ? `<p>Possible error line: ${Number(result.error_line)}</p>` : ""}
+      <p>${htmlEscape(result.detailed_explanation)}</p>
+      <p><strong>Try this:</strong> ${htmlEscape(result.fix_hint)}</p>
+    `;
+  } catch (error) {
+    panel.textContent = `AI hint unavailable: ${error.message}`;
+  }
+}
+
 function submissionPayload(
   autoSubmitted = false,
   problem = codingState.problem,
@@ -728,6 +751,16 @@ async function runSamples() {
     const data = await codingPost("/contest/run-samples", submissionPayload(false));
     codingState.problemResults.set(data.problem_id, data);
     renderResults(data);
+    const errorResult = (data.visible_results || []).find((result) => result.error_logs?.trim());
+    if (errorResult) {
+      await requestAiDebug(errorResult.error_logs);
+    } else {
+      const debugPanel = codingQs("[data-ai-debugger]");
+      if (debugPanel) {
+        debugPanel.hidden = true;
+        debugPanel.replaceChildren();
+      }
+    }
     setContestStatus("Sample run complete.", "success");
   } catch (error) {
     setContestStatus(error.message, "warning");

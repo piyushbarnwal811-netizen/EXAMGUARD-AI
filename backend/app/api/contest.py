@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +26,8 @@ from app.db.models import (
 from app.db.session import get_db
 from app.schemas.coding import (
     CodeExecutionOut,
+    CodeDebugOut,
+    CodeDebugRequest,
     CodeDraftAutoSubmitRequest,
     CodeDraftOut,
     CodeDraftSaveRequest,
@@ -44,6 +50,41 @@ from app.services.coding_executor import ExecutionCaseResult, execute_code_again
 
 router = APIRouter(prefix="/contest", tags=["coding contest"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _generate_code_debug(
+    api_key: str,
+    model_name: str,
+    timeout_seconds: int,
+    language: str,
+    source_code: str,
+    error_logs: str,
+) -> CodeDebugOut:
+    import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name,
+        system_instruction=(
+            "You are a programming tutor. Analyze only the supplied compiler/runtime error. "
+            "Return one JSON object with has_error, error_line, error_summary, "
+            "detailed_explanation, and fix_hint. Never return corrected code or a full solution. "
+            "Use a short Hindi-English mix when helpful. Set error_line to null if unknown."
+        ),
+    )
+    response = model.generate_content(
+        f"Language: {language}\nSource code:\n{source_code}\n\nError logs:\n{error_logs}",
+        generation_config={
+            "max_output_tokens": 900,
+            "response_mime_type": "application/json",
+        },
+        request_options={"timeout": timeout_seconds},
+    )
+    raw_text = getattr(response, "text", "")
+    if not raw_text:
+        raise ValueError("Gemini returned an empty debugging response.")
+    return CodeDebugOut.model_validate_json(raw_text)
 
 
 def _now_utc() -> datetime:
@@ -931,6 +972,53 @@ async def run_visible_samples(
         hidden_results=[],
         submitted=False,
     )
+
+
+@router.post("/debug", response_model=CodeDebugOut)
+async def debug_code_error(
+    payload: CodeDebugRequest,
+    _subject: dict[str, object] = Depends(require_student),
+) -> CodeDebugOut:
+    api_key = os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI debugger is unavailable because GEMINI_API_KEY is not configured.",
+        )
+
+    model_name = os.getenv("GEMINI_MODEL") or settings.GEMINI_MODEL
+    try:
+        timeout_seconds = int(
+            os.getenv("GEMINI_TIMEOUT_SECONDS") or settings.GEMINI_TIMEOUT_SECONDS
+        )
+    except (TypeError, ValueError):
+        timeout_seconds = 45
+    timeout_seconds = max(10, min(timeout_seconds, 120))
+
+    try:
+        return await asyncio.wait_for(
+            run_in_threadpool(
+                _generate_code_debug,
+                api_key,
+                model_name,
+                timeout_seconds,
+                payload.language,
+                payload.source_code,
+                payload.error_logs,
+            ),
+            timeout=timeout_seconds + 5,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="AI debugging timed out. Run the sample again to retry.",
+        ) from exc
+    except Exception as exc:
+        logger.exception("AI code debugging failed.")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI debugger could not analyze this error. Check the compiler logs above.",
+        ) from exc
 
 
 @router.post(

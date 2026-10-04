@@ -93,6 +93,12 @@ EXAM_INVITE_EXPIRE_HOURS=72
 For Gmail, use an app password in `SMTP_PASSWORD`. Use port `587` with
 `SMTP_STARTTLS=true`, or port `465` with `SMTP_USE_SSL=true`.
 
+For production, set these variables in the backend host (for example, Render)
+as well as locally. `backend/.env` is not automatically uploaded to Render or
+Vercel. In the admin panel, use **Send Test Email** to confirm delivery before
+importing students. Imports return per-recipient delivery counts and failures.
+Never commit or share an app password; rotate it immediately if it was exposed.
+
 ## AI Question Generation
 
 The admin panel can generate coding-question drafts with Gemini. Add this to `backend/.env` before using that feature:
@@ -108,3 +114,8 @@ Question generation tries Gemini first. If Gemini is slow, unavailable, or retur
 invalid JSON, the backend returns local fallback question drafts instead of timing
 out the admin panel. Each request includes a unique generation id so repeated
 clicks produce a fresh set of questions.
+
+The coding exam's **Run Samples** action can also request a structured Gemini
+debug hint when a visible sample produces compiler/runtime logs. Configure
+`GEMINI_API_KEY` on the backend host to enable it. The debugger returns an
+explanation and targeted hint, not corrected code.

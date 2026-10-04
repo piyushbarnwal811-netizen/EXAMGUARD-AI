@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import datetime
+from html import escape
 
 from app.config import get_settings
 from app.services.email_service import send_email
@@ -26,8 +27,8 @@ def build_exam_invite_link(token: str) -> str:
         base = base.replace("/src/pages/exam.html", "")
     if not base:
         base = "https://examguard-ai.vercel.app"
-    # Clean URL - Vercel rewrite /exam -> /src/pages/exam.html
-    return f"{base}/exam?token={token}"
+    # Keep both names for compatibility with older flows and UI checks.
+    return f"{base}/exam?invite={token}&token={token}"
 
 def _format_expiry(expires_at: datetime) -> str:
     return expires_at.astimezone().strftime("%Y-%m-%d %H:%M %Z")
@@ -40,16 +41,47 @@ def build_invite_email_body(
 ) -> str:
     return (
         f"Hello {student_name},\n\n"
-        f"Your ExamGuard AI Secure Exam Link (Safe Exam Browser Required):\n{invite_link}\n\n"
+        f"Your exam access link is below. Please open it only from Safe Exam Browser (SEB):\n{invite_link}\n\n"
         f"Your PIN: {pin}\n\n"
-        f"This link expires on {_format_expiry(expires_at)} and can be used once.\n"
+        f"This link expires on {_format_expiry(expires_at)} and can be used once.\n\n"
+        "Important: before the exam starts, the browser will check whether Safe Exam Browser is installed.\n"
+        "If it is not installed, download the Safe Browser and the .seb configuration file, then open the .seb file to launch the exam.\n\n"
         "Steps:\n"
         "1. Click the link above\n"
-        "2. If Safe Exam Browser is installed, exam will open in SEB\n"
-        "3. If not installed, you will see a download page - download SEB config + Safe Browser\n"
-        "4. After install, open the .seb file - exam will auto-launch\n"
-        "5. Enter your PIN to unlock\n\n"
+        "2. Let the SEB check run before exam start\n"
+        "3. If SEB is missing, download the SEB config and installer\n"
+        "4. Open the .seb file to start the exam automatically\n"
+        "5. Enter your PIN to unlock the exam\n\n"
         "If you were not expecting this invitation, please contact your exam admin.\n"
+    )
+
+def build_invite_email_html(
+    student_name: str,
+    invite_link: str,
+    pin: str,
+    expires_at: datetime,
+) -> str:
+    settings = get_settings()
+    app_name = escape(settings.APP_NAME)
+    safe_name = escape(student_name)
+    safe_link = escape(invite_link, quote=True)
+    safe_pin = escape(pin)
+    safe_expiry = escape(_format_expiry(expires_at))
+    return (
+        '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'
+        'color:#202733;line-height:1.6">'
+        f'<h1 style="color:#176b5b">{app_name}</h1>'
+        f'<p>Hello {safe_name},</p>'
+        '<p>Your secure exam invitation is ready. Open the link from Safe Exam Browser:</p>'
+        f'<p><a href="{safe_link}" style="display:inline-block;padding:12px 18px;'
+        'background:#176b5b;color:#fff;text-decoration:none;border-radius:4px">Open exam</a></p>'
+        f'<p>If the button does not work, use this link:<br><a href="{safe_link}">{safe_link}</a></p>'
+        f'<p><strong>Exam PIN:</strong> {safe_pin}<br>'
+        f'<strong>Link expires:</strong> {safe_expiry}</p>'
+        '<p>Before the exam starts, SEB and system checks must pass. If SEB is missing, '
+        'download the installer and exam configuration shown on the exam page, then open the .seb file.</p>'
+        '<p>Do not forward this email. Contact your exam administrator if you did not expect it.</p>'
+        '</div>'
     )
 
 def send_exam_invite_email(
@@ -63,4 +95,5 @@ def send_exam_invite_email(
         to_email=to_email,
         subject="Your ExamGuard AI exam access link",
         body=build_invite_email_body(student_name, invite_link, pin, expires_at),
+        html_body=build_invite_email_html(student_name, invite_link, pin, expires_at),
     )

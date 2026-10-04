@@ -49,6 +49,8 @@ def _clean_from_header(email_from: str, fallback_email: str) -> str:
 def _smtp_from_header(email_from: str, smtp_user: str, smtp_host: str) -> str:
     name, address = parseaddr((email_from or "").strip())
     clean_address = _clean_email_address(address or email_from or smtp_user)
+    if not clean_address:
+        clean_address = smtp_user
     if "gmail" in (smtp_host or "").lower() and clean_address.lower() != smtp_user.lower():
         clean_address = smtp_user
     return formataddr((name, clean_address)) if name else clean_address
@@ -82,9 +84,12 @@ def validate_email_settings() -> None:
         raise EmailConfigurationError("SMTP_PASSWORD must not be empty.")
 
 
-import time
-
-def send_email(to_email: str, subject: str, body: str) -> None:
+def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    html_body: str | None = None,
+) -> None:
     settings = _require_email_settings()
     smtp_user = _clean_email_address(settings.SMTP_USER)
     smtp_password = _clean_smtp_password(settings.SMTP_PASSWORD)
@@ -98,6 +103,8 @@ def send_email(to_email: str, subject: str, body: str) -> None:
     message["To"] = _clean_email_address(to_email)
     message["Subject"] = subject
     message.set_content(body)
+    if html_body:
+        message.add_alternative(html_body, subtype="html")
 
     # Determine primary and fallback connection strategies
     primary_ssl = settings.SMTP_USE_SSL or settings.SMTP_PORT == 465

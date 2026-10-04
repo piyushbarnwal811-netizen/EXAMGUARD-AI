@@ -1,8 +1,8 @@
 import csv
+import asyncio
 import hashlib
 import io
 import json
-import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -10,11 +10,10 @@ import re
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Query, status
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, EmailStr, ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +40,7 @@ from app.schemas.student import (
     StudentCsvRow,
     StudentImportResult,
 )
-from app.services.email_service import validate_email_settings, EmailConfigurationError, EmailDeliveryError
+from app.services.email_service import send_email, validate_email_settings, EmailConfigurationError, EmailDeliveryError
 from app.services.excel_service import generate_excel_report
 from app.services.invite_service import (
     build_exam_invite_link,
@@ -55,6 +54,9 @@ from app.services.student_import_service import (
     parse_student_sheet,
 )
 
+class EmailTestRequest(BaseModel):
+    to_email: EmailStr
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 PIN_ALPHABET = string.ascii_uppercase + string.digits
 ROLL_NO_SAFE = re.compile(r"[^A-Z0-9]+")
@@ -63,6 +65,26 @@ AI_CHEATING_EVENTS = {
     "LOOKING_AWAY",
     "MULTIPLE_FACES",
 }
+
+@router.post("/email-test")
+async def send_test_email(
+    payload: EmailTestRequest,
+    _admin: dict[str, object] = Depends(require_admin),
+) -> dict[str, str]:
+    try:
+        validate_email_settings()
+        await run_in_threadpool(
+            send_email,
+            str(payload.to_email),
+            "ExamGuard AI email delivery test",
+            "This test confirms that ExamGuard AI can deliver email using its configured SMTP settings.",
+        )
+    except (EmailConfigurationError, EmailDeliveryError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return {"status": "sent", "to_email": str(payload.to_email)}
 
 
 @dataclass
@@ -186,57 +208,36 @@ async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFail
     except RuntimeError as exc:
         return 0, [InviteFailure(email=job.email, error=str(exc)) for job in jobs]
 
+    semaphore = asyncio.Semaphore(4)
+
+    async def send_one(job: InviteJob) -> tuple[InviteJob, str | None]:
+        invite_link = build_exam_invite_link(job.token)
+        try:
+            async with semaphore:
+                await run_in_threadpool(
+                    send_exam_invite_email,
+                    job.email,
+                    job.name,
+                    invite_link,
+                    job.pin,
+                    job.expires_at,
+                )
+        except Exception as exc:
+            return job, str(exc)
+        return job, None
+
+    outcomes = await asyncio.gather(*(send_one(job) for job in jobs))
     sent = 0
     failures: list[InviteFailure] = []
-
-    for job in jobs:
-        invite_link = build_exam_invite_link(job.token)
-        try:
-            await run_in_threadpool(
-                send_exam_invite_email,
-                job.email,
-                job.name,
-                invite_link,
-                job.pin,
-                job.expires_at,
-            )
-        except Exception as exc:
-            failures.append(InviteFailure(email=job.email, error=str(exc)))
-            continue
-
-        job.student.invite_sent_at = datetime.now(timezone.utc)
-        sent += 1
+    for job, error in outcomes:
+        if error:
+            failures.append(InviteFailure(email=job.email, error=error))
+        else:
+            job.student.invite_sent_at = datetime.now(timezone.utc)
+            job.student.invite_status = "SENT"
+            sent += 1
 
     return sent, failures
-
-
-async def _send_invite_jobs_background(jobs: list[InviteJob]) -> None:
-    """Fire‑and‑forget email sending for background tasks."""
-    try:
-        validate_email_settings()
-    except EmailConfigurationError as exc:
-        logger.error("Email not configured: %s", exc)
-        return
-    except RuntimeError:
-        return
-
-    for job in jobs:
-        invite_link = build_exam_invite_link(job.token)
-        try:
-            await run_in_threadpool(
-                send_exam_invite_email,
-                job.email,
-                job.name,
-                invite_link,
-                job.pin,
-                job.expires_at,
-            )
-        except EmailConfigurationError as exc:
-            logger.error("SMTP configuration error for %s: %s", job.email, exc)
-        except EmailDeliveryError as exc:
-            logger.error("SMTP delivery error for %s: %s", job.email, exc)
-        except Exception as exc:
-            logger.error("Unexpected error sending invite to %s: %s", job.email, exc)
 
 
 async def _upsert_imported_students(
@@ -575,7 +576,6 @@ def _build_report_rows(
 
 @router.post("/import-students", response_model=None)
 async def import_students_sheet(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     send_invites: bool = Form(True),
     db: AsyncSession = Depends(get_db),
@@ -638,19 +638,21 @@ async def import_students_sheet(
                         inserted -= 1
             await db.commit()
 
-        # If invites requested, dispatch emails in background
+        sent = 0
+        failures: list[InviteFailure] = []
         if invite_jobs:
-            background_tasks.add_task(_send_invite_jobs_background, invite_jobs)
+            sent, failures = await _send_invite_jobs(invite_jobs)
+            await db.commit()
 
         return {
             "status": "success",
-            "message": "Students imported successfully. Invites are being dispatched in the background.",
+            "message": "Students imported successfully. Invite delivery results are included below.",
             "inserted": inserted,
             "updated": updated,
             "total_students": len(students),
-            "invites_sent": 0,
-            "invites_failed": 0,
-            "failed_invites": [],
+            "invites_sent": sent,
+            "invites_failed": len(failures),
+            "failed_invites": failures,
         }
     except HTTPException:
         raise
@@ -663,7 +665,6 @@ async def import_students_sheet(
 
 @router.post("/send-invites", response_model=None)
 async def send_student_invites(
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
@@ -680,6 +681,9 @@ async def send_student_invites(
                 "message": "No pending students found to send invites. Please upload a student CSV first.",
                 "sent": 0,
                 "failed": 0,
+                "invites_sent": 0,
+                "invites_failed": 0,
+                "failed_invites": [],
             }
 
         _ensure_invite_email_configured()
@@ -693,15 +697,20 @@ async def send_student_invites(
                 detail="Invite generation conflicts with existing database constraints.",
             ) from exc
 
-        # Dispatch emails in background
-        background_tasks.add_task(_send_invite_jobs_background, invite_jobs)
+        sent, failures = await _send_invite_jobs(invite_jobs)
+        for job in invite_jobs:
+            if job.student and job.student.invite_sent_at is not None:
+                job.student.invite_status = "SENT"
+        await db.commit()
 
         return {
             "status": "success",
-            "message": "Invite emails are being dispatched in the background.",
-            "sent": 0,
-            "failed": 0,
-            "failed_invites": [],
+            "message": "Invite emails sent successfully.",
+            "sent": sent,
+            "failed": len(failures),
+            "invites_sent": sent,
+            "invites_failed": len(failures),
+            "failed_invites": failures,
         }
     except HTTPException:
         raise

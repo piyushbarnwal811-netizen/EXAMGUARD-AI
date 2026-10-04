@@ -224,7 +224,7 @@ function notifyStudentReady() {
   document.dispatchEvent(new CustomEvent("examguard:student-ready"));
 }
 
-function showExamAccessGate(message = "Open your exam invitation link to begin.") {
+function showExamAccessGate(message = "Use the email exam link to begin. The SEB and system checks will run before the exam starts.") {
   const holder = qs("[data-question-list]");
   if (!holder) return;
 
@@ -232,7 +232,6 @@ function showExamAccessGate(message = "Open your exam invitation link to begin."
     <article class="question-area">
       <h2>Invitation Required</h2>
       <p class="muted">${escapeHtml(message)}</p>
-      <a class="button" href="login.html">Student Login</a>
     </article>
   `;
 }
@@ -275,7 +274,7 @@ async function verifyInviteWithPin(event) {
   event.preventDefault();
   const inviteToken = getInviteTokenFromUrl();
   const form = event.currentTarget;
-  const pin = form.pin.value.trim();
+  const pin = (form.pin?.value || form.studentPin?.value || "").trim();
 
   if (!inviteToken) {
     setExamStatus("Invitation token is missing. Open a fresh exam link.", "warning");
@@ -284,7 +283,12 @@ async function verifyInviteWithPin(event) {
 
   setExamStatus("Verifying PIN...");
   try {
-    const data = await postJson("/auth/verify-invite", { token: inviteToken, pin });
+    const data = await postJson("/auth/verify-invite", {
+      token: inviteToken,
+      invite: inviteToken,
+      pin,
+      studentPin: pin,
+    });
     saveToken(data.access_token, data.session_id);
     clearInviteTokenFromUrl();
     setExamSurfaceForPinGate(false);
@@ -306,11 +310,17 @@ async function verifyInviteWithPin(event) {
 async function handleStudentLogin(event) {
   event.preventDefault();
   const form = event.currentTarget;
-  const rollNo = form.roll_no.value.trim();
-  const pin = form.pin.value.trim();
+  const rollNo = (form.roll_no?.value || form.rollNo?.value || form.student_roll_no?.value || "").trim();
+  const pin = (form.pin?.value || form.studentPin?.value || form.student_pin?.value || "").trim();
 
   try {
-    const data = await postJson("/auth/verify-pin", { roll_no: rollNo, pin });
+    const data = await postJson("/auth/verify-pin", {
+      roll_no: rollNo,
+      rollNo,
+      pin,
+      studentPin: pin,
+      student_pin: pin,
+    });
     saveToken(data.access_token, data.session_id);
     setStatus("Login successful. Opening dashboard...", "success");
     window.location.href = "student-dashboard.html";
@@ -497,7 +507,10 @@ async function uploadCsv(event) {
 
   const formData = new FormData();
   formData.append("file", uploadFile, file.name);
-  formData.append("send_invites", "true");
+  formData.append(
+    "send_invites",
+    qs("#sendInvitesOnUpload")?.checked ? "true" : "false"
+  );
 
   const response = await apiFetch("/admin/import-students", {
     method: "POST",
@@ -512,8 +525,25 @@ async function uploadCsv(event) {
   renderImportResult(data);
   setStatus(
     `Students imported. Inserted: ${data.inserted}, updated: ${data.updated}, invites sent: ${data.invites_sent}.`,
-    "success"
+    data.invites_failed ? "warning" : "success"
   );
+}
+
+async function sendTestEmail() {
+  const input = qs("[data-test-email-address]");
+  const toEmail = input?.value.trim();
+  if (!toEmail) {
+    setStatus("Enter an email address for the delivery test.", "warning");
+    input?.focus();
+    return;
+  }
+
+  try {
+    const result = await postJson("/admin/email-test", { to_email: toEmail });
+    setStatus(`Test email sent to ${result.to_email}.`, "success");
+  } catch (error) {
+    setStatus(`Test email failed: ${error.message}`, "warning");
+  }
 }
 
 function downloadBlob(blob, filename) {
@@ -1401,8 +1431,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (isExamPage && !getToken() && !isLoginPage) {
-    window.location.href = 'login.html';
-    return;
+    const inviteToken = getInviteTokenFromUrl();
+    if (!inviteToken) {
+      setExamStatus("Use the email exam link to begin. Student login is not required for this flow.", "warning");
+      return;
+    }
   }
 
   // Tab switching on login page
@@ -1443,6 +1476,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   qs("[data-generate-pins]")?.addEventListener("click", generatePins);
   qs("[data-send-invites]")?.addEventListener("click", sendInvites);
+  qs("[data-send-test-email]")?.addEventListener("click", sendTestEmail);
   qs("[data-download-report]")?.addEventListener("click", () => downloadReport());
   qs("[data-refresh-exam-history]")?.addEventListener("click", loadExamHistory);
   qs("[data-exam-history]")?.addEventListener("click", (event) => {

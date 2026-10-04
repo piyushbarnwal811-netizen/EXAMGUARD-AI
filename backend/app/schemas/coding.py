@@ -100,6 +100,27 @@ class CodeRunRequest(BaseModel):
         return value
 
 
+class CodeDebugRequest(BaseModel):
+    language: CodeLanguage
+    source_code: str = Field(..., min_length=1, max_length=100_000)
+    error_logs: str = Field(..., min_length=1, max_length=8_000)
+
+    @field_validator("source_code", "error_logs")
+    @classmethod
+    def validate_debug_input(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Debug input cannot be empty.")
+        return value
+
+
+class CodeDebugOut(BaseModel):
+    has_error: bool = True
+    error_line: int | None = Field(default=None, ge=1)
+    error_summary: str = Field(..., min_length=1, max_length=240)
+    detailed_explanation: str = Field(..., min_length=1, max_length=2_000)
+    fix_hint: str = Field(..., min_length=1, max_length=600)
+
+
 class CodeSubmitRequest(CodeRunRequest):
     auto_submitted: bool = False
 

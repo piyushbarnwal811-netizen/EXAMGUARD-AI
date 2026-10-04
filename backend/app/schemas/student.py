@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 def normalize_roll_no(value: str) -> str:
@@ -29,8 +29,27 @@ class StudentCsvRow(StudentCreate):
 
 
 class StudentLogin(BaseModel):
-    roll_no: str = Field(..., min_length=1, max_length=50)
-    pin: str = Field(..., min_length=6, max_length=6, pattern=r"^[A-Za-z0-9]{6}$")
+    model_config = ConfigDict(populate_by_name=True)
+
+    roll_no: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        validation_alias=AliasChoices(
+            "roll_no",
+            "rollNo",
+            "rollNumber",
+            "student_roll_no",
+            "studentRollNo",
+        ),
+    )
+    pin: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^[A-Za-z0-9]{6}$",
+        validation_alias=AliasChoices("pin", "student_pin", "studentPin", "studentPIN"),
+    )
 
     @field_validator("roll_no")
     @classmethod
@@ -97,8 +116,19 @@ class InviteBatchResult(BaseModel):
 
 
 class InviteTokenVerify(BaseModel):
-    token: str = Field(..., min_length=24, max_length=255)
-    pin: str = Field(..., min_length=6, max_length=6, pattern=r"^[A-Za-z0-9]{6}$")
+    token: str = Field(
+        ...,
+        min_length=24,
+        max_length=255,
+        validation_alias=AliasChoices("token", "invite", "invite_token", "exam_token"),
+    )
+    pin: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^[A-Za-z0-9]{6}$",
+        validation_alias=AliasChoices("pin", "student_pin", "studentPin"),
+    )
 
     @field_validator("pin")
     @classmethod

@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -50,6 +51,25 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-flash-latest"
     GEMINI_TIMEOUT_SECONDS: int = 90
     GEMINI_REMOTE_ENABLED: bool = True
+
+    @field_validator("SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM", mode="before")
+    @classmethod
+    def _clean_env_value(cls, value):
+        if value is None:
+            return value
+        text = str(value).strip()
+        if "#" in text:
+            text = text.split("#", 1)[0].strip()
+        return text or ""
+
+    @field_validator("EMAIL_FROM", mode="before")
+    @classmethod
+    def _set_email_from_default(cls, value, info):
+        if value is None or not str(value).strip():
+            smtp_user = (info.data or {}).get("SMTP_USER") or ""
+            return str(smtp_user).strip()
+        return str(value).strip()
+
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
         env_file_encoding="utf-8",
