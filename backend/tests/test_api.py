@@ -151,18 +151,21 @@ def test_invite_verification_starts_exam_session(client):
         )
     )
 
-    missing_pin = client.post("/api/auth/verify-invite", json={"token": invite_token})
-    assert missing_pin.status_code == 422
-
     response = client.post(
         "/api/auth/verify-invite",
-        json={"token": invite_token, "pin": "PIN789"},
+        json={"token": invite_token},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["role"] == "student"
     assert body["session_id"] is not None
+
+    replay = client.post(
+        "/api/auth/verify-invite",
+        json={"token": invite_token},
+    )
+    assert replay.status_code == 409
 
 
 def test_student_login_accepts_common_alias_fields(client):
@@ -179,7 +182,7 @@ def test_student_login_accepts_common_alias_fields(client):
     assert body["roll_no"] == "ALIAS001"
 
 
-def test_send_invites_generates_pin_and_email(client, monkeypatch):
+def test_send_invites_creates_single_use_exam_link(client, monkeypatch):
     from app.api import admin as admin_api
 
     token = _admin_token(client)
@@ -192,13 +195,12 @@ def test_send_invites_generates_pin_and_email(client, monkeypatch):
     )
     sent_messages = []
 
-    def fake_send_invite_email(to_email, student_name, invite_link, pin, expires_at):
+    def fake_send_invite_email(to_email, student_name, invite_link, expires_at):
         sent_messages.append(
             {
                 "to_email": to_email,
                 "student_name": student_name,
                 "invite_link": invite_link,
-                "pin": pin,
                 "expires_at": expires_at,
             }
         )
@@ -217,8 +219,7 @@ def test_send_invites_generates_pin_and_email(client, monkeypatch):
     assert body["invites_failed"] == 0
     assert len(sent_messages) == 1
     assert sent_messages[0]["to_email"] == "mail.student@example.com"
-    assert len(sent_messages[0]["pin"]) == 6
-    assert "invite=" in sent_messages[0]["invite_link"]
+    assert "/exam?token=" in sent_messages[0]["invite_link"]
 
     async def fetch_student() -> Student:
         async with AsyncSessionLocal() as db:
@@ -228,8 +229,7 @@ def test_send_invites_generates_pin_and_email(client, monkeypatch):
             return result.scalar_one()
 
     student = run(fetch_student())
-    assert student.secret_pin
-    assert verify_secret(sent_messages[0]["pin"], student.secret_pin)
+    assert student.secret_pin is None
     assert student.invite_token_hash
     assert student.is_pin_used is False
 
@@ -353,7 +353,6 @@ def test_invite_html_escapes_student_content():
     body = build_invite_email_html(
         "<Student>",
         "https://example.com/exam?token=test&invite=test",
-        "ABC123",
         datetime.now(timezone.utc),
     )
 

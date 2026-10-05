@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -149,27 +149,47 @@ async def verify_invite(
             detail="This exam invitation link has expired.",
         )
 
-    if not student.secret_pin:
+    if payload.pin:
+        if not student.secret_pin:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This invitation does not have a PIN configured.",
+            )
+        if student.is_pin_used:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This PIN has already been used.",
+            )
+        if not verify_secret(payload.pin, student.secret_pin):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid exam invitation link or PIN.",
+            )
+
+    claim_result = await db.execute(
+        update(Student)
+        .where(
+            Student.id == student.id,
+            Student.invite_token_hash == token_hash,
+            Student.invite_accepted_at.is_(None),
+            Student.invite_token_expires_at >= now,
+        )
+        .values(
+            invite_accepted_at=now,
+            is_invite_used=True,
+            is_pin_used=True,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if claim_result.rowcount != 1:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ask your admin to generate your exam PIN before starting.",
-        )
-
-    if student.is_pin_used:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This PIN has already been used.",
-        )
-
-    if not verify_secret(payload.pin, student.secret_pin):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid exam invitation link or PIN.",
+            detail="This exam invitation link has already been used.",
         )
 
     client_ip = get_client_ip(request)
     student.invite_accepted_at = now
-    student.invite_token_hash = None
     student.is_invite_used = True
     student.is_pin_used = True
     session = ExamSession(

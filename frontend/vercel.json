@@ -1,6 +1,7 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/exam", "destination": "/src/pages/student-exam.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

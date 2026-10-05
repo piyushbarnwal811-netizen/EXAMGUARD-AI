@@ -122,8 +122,8 @@ class InviteTokenVerify(BaseModel):
         max_length=255,
         validation_alias=AliasChoices("token", "invite", "invite_token", "exam_token"),
     )
-    pin: str = Field(
-        ...,
+    pin: str | None = Field(
+        None,
         min_length=6,
         max_length=6,
         pattern=r"^[A-Za-z0-9]{6}$",
@@ -132,8 +132,8 @@ class InviteTokenVerify(BaseModel):
 
     @field_validator("pin")
     @classmethod
-    def validate_pin(cls, value: str) -> str:
-        return value.strip().upper()
+    def validate_pin(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value else None
 
 
 class PinRecord(BaseModel):

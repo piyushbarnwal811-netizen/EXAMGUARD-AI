@@ -116,3 +116,14 @@ test("precheck gates the contest on system camera location and fullscreen", () =
   assert.match(coding, /examguard:precheck-complete/);
   assert.match(coding, /showPrecheckRequired/);
 });
+
+test("email exam links route to the one-time student exam flow", () => {
+  const vercel = read("vercel.json");
+  const exam = read("src/pages/student-exam.html");
+  const main = read("src/js/main.js");
+
+  assert.match(vercel, /"source": "\/exam", "destination": "\/src\/pages\/student-exam\.html"/);
+  assert.match(exam, /ExamGuardExamEnvironmentReady = isSEB\(\)/);
+  assert.match(exam, /apiBase\}\/download\/seb-config\?token=/);
+  assert.match(main, /postJson\("\/auth\/verify-invite", \{\s*token: inviteToken/s);
+});

@@ -93,7 +93,6 @@ class InviteJob:
     email: str
     name: str
     token: str
-    pin: str
     expires_at: datetime
 
 
@@ -169,7 +168,6 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
         hours=settings.EXAM_INVITE_EXPIRE_HOURS
     )
     used_hashes: set[str] = set()
-    used_pins: set[str] = set()
     jobs: list[InviteJob] = []
 
     for student in students:
@@ -180,9 +178,6 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
                 used_hashes.add(token_hash)
                 break
 
-        pin = _new_pin(used_pins)
-        student.secret_pin = hash_secret(pin)
-        student.is_pin_used = False
         student.invite_token_hash = token_hash
         student.invite_token_expires_at = expires_at
         student.invite_sent_at = None
@@ -194,7 +189,6 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
                 email=student.email,
                 name=student.name,
                 token=token,
-                pin=pin,
                 expires_at=expires_at,
             )
         )
@@ -219,7 +213,6 @@ async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFail
                     job.email,
                     job.name,
                     invite_link,
-                    job.pin,
                     job.expires_at,
                 )
         except Exception as exc:

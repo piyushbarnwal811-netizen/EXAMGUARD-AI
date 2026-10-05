@@ -119,6 +119,7 @@ def send_email(
 
     context = ssl.create_default_context()
     max_attempts = 2  # per strategy
+    last_error: smtplib.SMTPException | OSError | None = None
 
     for label, use_ssl, port in strategies:
         for attempt in range(1, max_attempts + 1):
@@ -153,6 +154,7 @@ def send_email(
                     "for Gmail, use an app password."
                 ) from exc
             except (smtplib.SMTPException, OSError) as exc:
+                last_error = exc
                 if attempt == max_attempts:
                     logger.warning("Strategy %s (port %s, ssl=%s) attempt %s failed: %s", label, port, use_ssl, attempt, exc)
                     break  # try next strategy
@@ -160,8 +162,9 @@ def send_email(
                 time.sleep(1.5 * attempt)
 
     raise EmailDeliveryError(
-        f"SMTP delivery failed for {to_email} after trying primary and fallback strategies."
-    )
+        f"SMTP delivery failed for {to_email} after trying primary and fallback "
+        f"strategies. Last error: {last_error or 'unknown SMTP error'}"
+    ) from last_error
 
 
 def send_bulk_emails(recipients: Iterable[str], subject: str, body: str) -> int:

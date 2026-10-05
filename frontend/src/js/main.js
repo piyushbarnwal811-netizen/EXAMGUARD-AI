@@ -127,7 +127,7 @@ async function apiFetch(path, options = {}) {
         attempt++;
         continue;
       }
-      if (response.status === 401) {
+      if (response.status === 401 && path !== "/auth/verify-invite") {
         localStorage.removeItem('examguard_token');
         localStorage.removeItem('token');
         localStorage.removeItem('adminToken');
@@ -253,46 +253,26 @@ function setExamSurfaceForPinGate(active) {
   if (pinGate) pinGate.hidden = !active;
 }
 
-function showInvitePinGate(isExamPage) {
+async function startInviteExam() {
   const inviteToken = getInviteTokenFromUrl();
-  if (!inviteToken) return false;
-
-  if (isExamPage) {
-    clearStudentAccess();
-    setExamSurfaceForPinGate(true);
-    setExamStatus("Enter the generated PIN to unlock this exam.", "warning");
-    const pinInput = qs("#invitePinForm input[name='pin']");
-    window.setTimeout(() => pinInput?.focus(), 50);
-    return true;
-  }
-
-  setExamStatus("Open the exam link and enter your generated PIN.", "warning");
-  return true;
-}
-
-async function verifyInviteWithPin(event) {
-  event.preventDefault();
-  const inviteToken = getInviteTokenFromUrl();
-  const form = event.currentTarget;
-  const pin = (form.pin?.value || form.studentPin?.value || "").trim();
-
   if (!inviteToken) {
     setExamStatus("Invitation token is missing. Open a fresh exam link.", "warning");
     return;
   }
 
-  setExamStatus("Verifying PIN...");
+  clearStudentAccess();
+  setExamSurfaceForPinGate(true);
+  const linkStatus = qs("[data-invite-link-status]");
+  if (linkStatus) linkStatus.textContent = "Verifying your one-time exam link...";
+  setExamStatus("Starting exam from your secure invitation link...");
   try {
     const data = await postJson("/auth/verify-invite", {
       token: inviteToken,
-      invite: inviteToken,
-      pin,
-      studentPin: pin,
     });
     saveToken(data.access_token, data.session_id);
     clearInviteTokenFromUrl();
     setExamSurfaceForPinGate(false);
-    setExamStatus("PIN verified. Opening exam...", "success");
+    setExamStatus("Invitation verified. Opening exam...", "success");
 
     const isQuestionExamPage = Boolean(qs("[data-question-list]"));
     const isCodingExamPage = Boolean(qs("[data-coding-contest]"));
@@ -303,9 +283,12 @@ async function verifyInviteWithPin(event) {
       notifyStudentReady();
     }
   } catch (error) {
+    if (linkStatus) linkStatus.textContent = error.message;
     setExamStatus(error.message, "warning");
   }
 }
+
+window.ExamGuardStartInvite = startInviteExam;
 
 async function handleStudentLogin(event) {
   event.preventDefault();
@@ -1405,7 +1388,12 @@ async function initializeStudentAccess() {
   }
 
   if (inviteToken) {
-    showInvitePinGate(isExamPage);
+    if (!isExamPage) return;
+    if (window.ExamGuardExamEnvironmentReady === false) {
+      setExamStatus("Open this link in Safe Exam Browser to start your exam.", "warning");
+      return;
+    }
+    await startInviteExam();
     return;
   }
 
@@ -1458,10 +1446,6 @@ document.addEventListener("DOMContentLoaded", () => {
   qs("#student-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     await handleStudentLogin(e);
-  });
-  qs("#invitePinForm")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    await verifyInviteWithPin(e);
   });
   qs("#admin-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
