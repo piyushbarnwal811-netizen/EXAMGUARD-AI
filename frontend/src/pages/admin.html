@@ -3,219 +3,509 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin | ExamGuard Pro</title>
+    <title>Admin Command Center | ExamGuard Pro</title>
     <link rel="stylesheet" href="../css/style.css" />
   </head>
   <body>
+    <!-- Topbar -->
     <header class="shell topbar">
       <div>
         <div class="brand">ExamGuard Pro</div>
-        <p class="muted">Admin dashboard and reports.</p>
+        <p class="muted">AI-Proctored Assessment & Integrity Command Center</p>
+        <div class="security-strip">
+          <span class="status-pill success"><span class="status-dot"></span><span>SYSTEM ACTIVE</span></span>
+          <span class="status-pill"><span class="status-dot"></span><span data-admin-user-pill>Admin: admin</span></span>
+          <span class="status-pill"><span class="status-dot"></span><span data-live-clock>Syncing...</span></span>
+        </div>
       </div>
       <nav class="nav">
-        <a class="button button-secondary" href="login.html">Student Login</a>
-        <a class="button" href="../../index.html">Home</a>
+        <a class="button button-secondary" href="login.html">Student Portal</a>
+        <a class="button button-secondary" href="../../index.html">Home</a>
+        <button type="button" class="button-danger btn-sm" id="adminLogoutBtn">Logout</button>
       </nav>
     </header>
 
-    <main class="shell grid">
-      <section class="card">
-        <h2>Admin Login</h2>
+    <!-- Global Toast Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <main class="shell">
+      <!-- Admin Login Overlay Card (shown if not logged in) -->
+      <section class="card" id="adminLoginCard" style="display: none; max-width: 480px; margin: 40px auto;">
+        <div class="hero-shield-badge">🔐 Restricted Access</div>
+        <h2>Admin Authentication</h2>
+        <p class="muted">Enter administrator credentials to access student invites and contest proctoring.</p>
         <form id="adminLoginForm">
           <label>
             Username
-            <input name="username" type="text" value="admin" required />
+            <input name="username" type="text" value="admin" autocomplete="username" required />
           </label>
           <label>
             Password
-            <input name="password" type="password" value="admin123" required />
+            <input name="password" type="password" value="admin123" autocomplete="current-password" required />
           </label>
-          <button type="submit">Login</button>
+          <button type="submit" class="btn-glow">Sign In to Dashboard</button>
         </form>
-        <p class="status" data-status>Waiting for admin login.</p>
+        <p class="status" data-status style="margin-top: 16px;">Waiting for admin login.</p>
       </section>
 
-      <section class="card">
-        <h2>Upload Students</h2>
-        <p class="muted">Upload a sheet with name and email columns.</p>
-        <form id="csvUploadForm">
-          <label>
-            CSV or Excel File
-            <input id="studentsCsv" type="file" accept=".csv,.xlsx,.xlsm,.xls" />
-          </label>
-          <label class="check-row">
-            <input id="sendInvitesOnUpload" type="checkbox" />
-            Send invite emails after import
-          </label>
-          <button type="submit">Upload Students</button>
-        </form>
-        <div class="actions">
-          <label>
-            Test email address
-            <input type="email" data-test-email-address autocomplete="email" required />
-          </label>
-          <button type="button" class="button-secondary" data-send-test-email>Send Test Email</button>
+      <!-- Main Dashboard (shown when logged in) -->
+      <div id="adminDashboardContent">
+        <!-- Status Bar -->
+        <div class="status" data-status style="margin-bottom: 20px;">
+          System ready. Manage students, schedule contests, or generate AI questions below.
         </div>
-        <div class="result-list" data-import-result></div>
-      </section>
 
-      <section class="card">
-        <h2>Contest Schedule</h2>
-        <form id="contestScheduleForm">
-          <label>
-            Contest Title
-            <input id="contestTitle" name="title" type="text" required />
-          </label>
-          <label>
-            Start Time
-            <input id="contestStartTime" name="start_time" type="datetime-local" required />
-          </label>
-          <label>
-            End Time
-            <input id="contestEndTime" name="end_time" type="datetime-local" required />
-          </label>
-          <label class="check-row">
-            <input id="contestPublished" type="checkbox" checked />
-            Published
-          </label>
-          <button type="submit">Save Schedule</button>
-        </form>
-        <div class="result-list" data-schedule-summary></div>
-      </section>
-
-      <section class="card wide-card">
-        <h2>Coding Question</h2>
-        <section class="ai-generator-panel">
-          <h3>AI Question Generator</h3>
-          <form id="aiQuestionForm" class="ai-generator-form">
-            <label>
-              Topic
-              <input id="aiTopic" name="topic" type="text" placeholder="Arrays, SQL, Python OOP" required />
-            </label>
-            <label>
-              Difficulty
-              <select id="aiDifficulty" name="difficulty" required>
-                <option value="Easy">Easy</option>
-                <option value="Medium" selected>Medium</option>
-                <option value="Hard">Hard</option>
-              </select>
-            </label>
-            <label>
-              Count
-              <input id="aiQuestionCount" name="count" type="number" min="1" max="10" value="3" required />
-            </label>
-            <button type="submit">Generate with AI</button>
-          </form>
-          <div class="actions ai-generator-actions">
-            <button type="button" class="button-secondary" data-add-all-ai-questions hidden>Add All Generated</button>
+        <!-- Metric Stats Grid -->
+        <section class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-title">Total Students</span>
+              <span class="stat-icon">👥</span>
+            </div>
+            <div class="stat-value" id="statTotalStudents">0</div>
+            <div class="stat-sub">Registered for proctored exam</div>
           </div>
-          <div class="ai-question-list" data-ai-question-results></div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-title">Invites Sent</span>
+              <span class="stat-icon">✉️</span>
+            </div>
+            <div class="stat-value" style="color: #00e676;" id="statInvitesSent">0</div>
+            <div class="stat-sub">Delivered via SMTP Gmail</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-title">Pending / Failed</span>
+              <span class="stat-icon">⏳</span>
+            </div>
+            <div class="stat-value" style="color: #fbbf24;" id="statInvitesPending">0</div>
+            <div class="stat-sub">Ready to dispatch / retry</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-title">Contest Status</span>
+              <span class="stat-icon">🛡️</span>
+            </div>
+            <div class="stat-value" style="font-size: 1.5rem; color: #00f2fe;" id="statContestStatus">Ready</div>
+            <div class="stat-sub" id="statContestSub">AI Proctoring Enabled</div>
+          </div>
         </section>
 
-        <section class="problem-bank-panel">
-          <div class="panel-head">
-            <h3>Questions in Contest</h3>
-            <div class="actions compact-actions">
-              <button type="button" class="button-secondary" data-add-problem>Add Question</button>
-              <button type="button" class="button-danger" data-remove-problem>Remove Question</button>
+        <!-- Modern Tabs Navigation -->
+        <nav class="admin-tabs-nav" aria-label="Dashboard sections">
+          <button type="button" class="admin-tab-btn active" data-admin-tab="students">
+            👥 Students & Bulk Invites
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="schedule">
+            ⏱️ Contest Schedule
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="questions">
+            🧠 AI Question Studio
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="reports">
+            📊 Exam Reports & History
+          </button>
+        </nav>
+
+        <!-- TAB 1: STUDENTS & BULK INVITES -->
+        <section class="admin-tab-content active" id="tab-students">
+          <div class="grid">
+            <!-- Left / Top: Upload Card -->
+            <div class="card" style="grid-column: span 2;">
+              <h2>Upload Students & Auto-Send Invites</h2>
+              <p class="muted">Upload your student list in Excel (.xlsx, .xls) or CSV format. Headers like <code>Name</code> and <code>Email</code> (and optional <code>Roll No</code>) are automatically recognized.</p>
+
+              <form id="csvUploadForm">
+                <div class="dropzone-container" id="dropzoneBox">
+                  <div class="dropzone-icon">📊</div>
+                  <div class="dropzone-title">Drag & Drop Excel or CSV file here</div>
+                  <div class="dropzone-desc">Supports Excel spreadsheets from colleges, Google Sheets exports, or CSV lists.</div>
+                  <div class="dropzone-chips">
+                    <span class="format-chip">.XLSX</span>
+                    <span class="format-chip">.XLS</span>
+                    <span class="format-chip">.CSV</span>
+                  </div>
+                  <input id="studentsCsv" type="file" accept=".csv,.xlsx,.xlsm,.xls" style="display: none;" />
+                  <div id="fileSelectedBox" class="file-selected-box">
+                    <span style="font-size: 1.4rem;">📄</span>
+                    <div style="flex: 1;">
+                      <strong id="fileSelectedName">No file selected</strong>
+                      <div class="muted" id="fileSelectedSize" style="font-size: 0.75rem;">-</div>
+                    </div>
+                    <button type="button" id="removeFileBtn" class="button-secondary btn-sm" style="min-height: 28px;">Change</button>
+                  </div>
+                </div>
+
+                <label class="check-row" style="background: rgba(0, 242, 254, 0.05); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(0, 242, 254, 0.2);">
+                  <input id="sendInvitesOnUpload" type="checkbox" checked />
+                  <span><strong>Automatically send invite emails immediately after import</strong> <span class="muted">(Emails sent with secure one-time exam link)</span></span>
+                </label>
+
+                <div class="actions" style="margin-top: 12px;">
+                  <button type="submit" id="uploadSubmitBtn">
+                    🚀 Upload &amp; Send Invites
+                  </button>
+                  <button type="button" class="button-secondary" data-send-invites>
+                    ✉️ Send Invites to Pending Students
+                  </button>
+                  <button type="button" class="button-secondary" id="resendAllInvitesBtn">
+                    🔄 Resend to All Students
+                  </button>
+                  <button type="button" class="button-secondary" data-generate-pins>
+                    🔑 Generate PINs
+                  </button>
+                </div>
+              </form>
+
+              <div class="result-list" data-import-result></div>
+              <div class="result-list" data-invite-result></div>
+            </div>
+
+            <!-- Right: Delivery Test Card -->
+            <div class="card">
+              <h2>Quick Email Delivery Test</h2>
+              <p class="muted">Verify your SMTP server by sending a quick test invitation to any email address.</p>
+              <div style="display: grid; gap: 14px;">
+                <label>
+                  Recipient Email
+                  <input type="email" data-test-email-address placeholder="example@gmail.com" autocomplete="email" required />
+                </label>
+                <button type="button" class="button-secondary" data-send-test-email id="btnSendTestEmail">
+                  Send Delivery Test
+                </button>
+              </div>
+              <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line);">
+                <div class="eyebrow">SMTP Config Status</div>
+                <div style="font-size: 0.85rem; color: #94a3b8; display: grid; gap: 6px;">
+                  <div>Server: <strong style="color: #fff;">smtp.gmail.com:465 (SSL)</strong></div>
+                  <div>Sender: <strong style="color: #fff;">ExamGuard AI</strong></div>
+                  <div>Status: <span style="color: #00e676; font-weight: 700;">● Authenticated &amp; Ready</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Full Width: Live Students Table -->
+            <div class="card wide-card">
+              <div class="panel-head" style="margin-bottom: 16px;">
+                <div>
+                  <h2>Student Directory &amp; Invite Status</h2>
+                  <p class="muted">Live status of all uploaded candidates. Track who received an invite, view PINs, or copy direct exam access links.</p>
+                </div>
+                <button type="button" class="button-secondary btn-sm" id="btnRefreshStudents">
+                  🔄 Refresh List
+                </button>
+              </div>
+
+              <!-- Search & Filter Toolbar -->
+              <div class="table-toolbar">
+                <div class="search-box-wrapper">
+                  <span class="search-box-icon">🔍</span>
+                  <input type="text" id="studentSearchInput" placeholder="Search by name, email, or roll no..." />
+                </div>
+                <div class="filter-group">
+                  <button type="button" class="filter-btn active" data-filter="all">All (<span id="countFilterAll">0</span>)</button>
+                  <button type="button" class="filter-btn" data-filter="sent">Sent (<span id="countFilterSent">0</span>)</button>
+                  <button type="button" class="filter-btn" data-filter="pending">Pending (<span id="countFilterPending">0</span>)</button>
+                  <button type="button" class="filter-btn" data-filter="failed">Failed (<span id="countFilterFailed">0</span>)</button>
+                </div>
+              </div>
+
+              <!-- Students Table -->
+              <div class="table-responsive">
+                <table class="modern-table">
+                  <thead>
+                    <tr>
+                      <th>Roll No</th>
+                      <th>Candidate Name</th>
+                      <th>Email Address</th>
+                      <th>Invite Status</th>
+                      <th>Sent At</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="studentsTableBody">
+                    <tr>
+                      <td colspan="6" style="text-align: center; color: var(--muted); padding: 32px;">
+                        No students imported yet. Upload an Excel or CSV file above.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-          <div class="problem-bank-list" data-problem-bank></div>
         </section>
 
-        <form id="codingProblemForm">
-          <div class="problem-form-grid">
-            <label>
-              Problem Title
-              <input id="problemTitle" name="title" type="text" required />
-            </label>
-            <label>
-              Statement
-              <textarea id="problemStatement" name="statement" rows="4" required></textarea>
-            </label>
-            <label>
-              Input Format
-              <textarea id="problemInputFormat" name="input_format" rows="3" required></textarea>
-            </label>
-            <label>
-              Output Format
-              <textarea id="problemOutputFormat" name="output_format" rows="3" required></textarea>
-            </label>
-            <label>
-              Constraints
-              <textarea id="problemConstraints" name="constraints" rows="3" required></textarea>
-            </label>
+        <!-- TAB 2: CONTEST SCHEDULE -->
+        <section class="admin-tab-content" id="tab-schedule">
+          <div class="card" style="max-width: 680px; margin: 0 auto;">
+            <h2>Contest Schedule &amp; Publication</h2>
+            <p class="muted">Set the scheduled window for students to take the exam. The exam lock automatically enforces this timeframe.</p>
+            <form id="contestScheduleForm">
+              <label>
+                Contest Title
+                <input id="contestTitle" name="title" type="text" placeholder="e.g. Full Stack Engineering Online Assessment" required />
+              </label>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <label>
+                  Start Time
+                  <input id="contestStartTime" name="start_time" type="datetime-local" required />
+                </label>
+                <label>
+                  End Time
+                  <input id="contestEndTime" name="end_time" type="datetime-local" required />
+                </label>
+              </div>
+              <label class="check-row" style="background: rgba(15, 23, 42, 0.6); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--line);">
+                <input id="contestPublished" type="checkbox" checked />
+                <span><strong>Publish contest immediately</strong> (Students can enter after start time)</span>
+              </label>
+              <button type="submit" class="btn-glow">Save Contest Schedule</button>
+            </form>
+            <div class="result-list" data-schedule-summary></div>
           </div>
+        </section>
 
-          <fieldset class="language-picker">
-            <legend>Enabled Languages</legend>
-            <label class="check-row">
-              <input id="enablePython" type="checkbox" checked />
-              Python
-            </label>
-            <label class="check-row">
-              <input id="enableCpp" type="checkbox" checked />
-              C++
-            </label>
-            <label class="check-row">
-              <input id="enableJava" type="checkbox" checked />
-              Java
-            </label>
-          </fieldset>
+        <!-- TAB 3: AI QUESTION STUDIO -->
+        <section class="admin-tab-content" id="tab-questions">
+          <div class="card wide-card">
+            <h2>AI Question Studio &amp; Problem Bank</h2>
+            <p class="muted">Create rich coding challenges manually or generate high-quality problems with automated hidden test cases using Gemini AI.</p>
 
-          <div class="starter-grid">
-            <label data-language-field="python">
-              Python Starter
-              <textarea id="starterPython" name="starter_code_python" rows="7"></textarea>
-            </label>
-            <label data-language-field="cpp">
-              C++ Starter
-              <textarea id="starterCpp" name="starter_code_cpp" rows="7"></textarea>
-            </label>
-            <label data-language-field="java">
-              Java Starter
-              <textarea id="starterJava" name="starter_code_java" rows="7"></textarea>
-            </label>
+            <section class="ai-generator-panel">
+              <div class="eyebrow">Gemini AI Engine</div>
+              <h3>Generate Questions with AI</h3>
+              <form id="aiQuestionForm" class="ai-generator-form">
+                <label>
+                  Topic
+                  <input id="aiTopic" name="topic" type="text" placeholder="e.g. Binary Search, Dynamic Programming, Strings" required />
+                </label>
+                <label>
+                  Difficulty
+                  <select id="aiDifficulty" name="difficulty" required>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </label>
+                <label>
+                  Count
+                  <input id="aiQuestionCount" name="count" type="number" min="1" max="10" value="3" required />
+                </label>
+                <button type="submit" id="btnGenerateAi">✨ Generate with AI</button>
+              </form>
+              <div class="actions ai-generator-actions">
+                <button type="button" class="button-secondary" data-add-all-ai-questions hidden>Add All Generated</button>
+              </div>
+              <div class="ai-question-list" data-ai-question-results></div>
+            </section>
+
+            <section class="problem-bank-panel">
+              <div class="panel-head">
+                <h3>Problems in Contest Bank</h3>
+                <div class="actions compact-actions">
+                  <button type="button" class="button-secondary" data-add-problem>+ Add Question</button>
+                  <button type="button" class="button-danger btn-sm" data-remove-problem>Remove Question</button>
+                </div>
+              </div>
+              <div class="problem-bank-list" data-problem-bank></div>
+            </section>
+
+            <form id="codingProblemForm">
+              <div class="problem-form-grid">
+                <label>
+                  Problem Title
+                  <input id="problemTitle" name="title" type="text" required />
+                </label>
+                <label>
+                  Statement
+                  <textarea id="problemStatement" name="statement" rows="4" required></textarea>
+                </label>
+                <label>
+                  Input Format
+                  <textarea id="problemInputFormat" name="input_format" rows="3" required></textarea>
+                </label>
+                <label>
+                  Output Format
+                  <textarea id="problemOutputFormat" name="output_format" rows="3" required></textarea>
+                </label>
+                <label>
+                  Constraints
+                  <textarea id="problemConstraints" name="constraints" rows="3" required></textarea>
+                </label>
+              </div>
+
+              <fieldset class="language-picker" style="background: rgba(15, 23, 42, 0.5); padding: 16px; border-radius: 8px; border: 1px solid var(--line); margin: 16px 0;">
+                <legend style="color: var(--accent); font-weight: 700; padding: 0 8px;">Enabled Languages</legend>
+                <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                  <label class="check-row">
+                    <input id="enablePython" type="checkbox" checked />
+                    Python 3
+                  </label>
+                  <label class="check-row">
+                    <input id="enableCpp" type="checkbox" checked />
+                    C++ 17
+                  </label>
+                  <label class="check-row">
+                    <input id="enableJava" type="checkbox" checked />
+                    Java 17
+                  </label>
+                </div>
+              </fieldset>
+
+              <div class="starter-grid">
+                <label data-language-field="python">
+                  Python Starter Code
+                  <textarea id="starterPython" name="starter_code_python" rows="7"></textarea>
+                </label>
+                <label data-language-field="cpp">
+                  C++ Starter Code
+                  <textarea id="starterCpp" name="starter_code_cpp" rows="7"></textarea>
+                </label>
+                <label data-language-field="java">
+                  Java Starter Code
+                  <textarea id="starterJava" name="starter_code_java" rows="7"></textarea>
+                </label>
+              </div>
+
+              <div class="panel-head" style="margin: 20px 0 10px;">
+                <h3>Test Cases (10 required per problem)</h3>
+                <span class="muted" style="font-size: 0.8rem;">Cases marked "Visible sample" will be shown to candidate</span>
+              </div>
+              <div class="test-case-list" data-test-cases></div>
+
+              <div class="actions">
+                <button type="submit" class="btn-glow">Save Coding Questions</button>
+              </div>
+            </form>
+            <div class="result-list" data-problem-summary></div>
           </div>
+        </section>
 
-          <div class="test-case-list" data-test-cases></div>
-          <button type="submit">Save Coding Questions</button>
-        </form>
-        <div class="result-list" data-problem-summary></div>
-      </section>
+        <!-- TAB 4: EXAM REPORTS & HISTORY -->
+        <section class="admin-tab-content" id="tab-reports">
+          <div class="card wide-card">
+            <div class="panel-head">
+              <div>
+                <h2>Exam History &amp; Integrity Reports</h2>
+                <p class="muted">Download comprehensive Excel reports containing candidate scores, proctoring violation logs, and test case results.</p>
+              </div>
+              <div class="actions compact-actions">
+                <button type="button" class="button-secondary" data-refresh-exam-history>🔄 Refresh History</button>
+                <button type="button" class="button" data-download-report>📥 Download Comprehensive Report (.xlsx)</button>
+              </div>
+            </div>
 
-      <section class="card wide-card">
-        <h2>Exam History & Reports</h2>
-        <p class="muted">Send one-time exam links, generate student PINs for manual login, and download reports for the exact exam.</p>
-        <div class="actions">
-          <button type="button" data-send-invites>Send Invites</button>
-          <button type="button" data-generate-pins>Generate PINs</button>
-          <button type="button" class="button-secondary" data-refresh-exam-history>Refresh History</button>
-          <button type="button" class="button-secondary" data-download-report>Download All</button>
-        </div>
-        <div class="result-list" data-invite-result></div>
-        <div class="table-wrap report-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Exam</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Status</th>
-                <th>Submissions</th>
-                <th>Report</th>
-              </tr>
-            </thead>
-            <tbody data-exam-history>
-              <tr>
-                <td colspan="6">Login to load exam history.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+            <div class="table-responsive" style="margin-top: 20px;">
+              <table class="modern-table">
+                <thead>
+                  <tr>
+                    <th>Exam Title</th>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                    <th>Status</th>
+                    <th>Submissions</th>
+                    <th>Download Report</th>
+                  </tr>
+                </thead>
+                <tbody data-exam-history>
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: var(--muted); padding: 24px;">Loading exam history...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="../js/main.js"></script>
+    <script>
+      // Tab switcher logic
+      document.addEventListener("DOMContentLoaded", () => {
+        const tabButtons = document.querySelectorAll(".admin-tab-btn");
+        const tabContents = document.querySelectorAll(".admin-tab-content");
+
+        tabButtons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const targetTab = btn.dataset.adminTab;
+            tabButtons.forEach((b) => b.classList.remove("active"));
+            tabContents.forEach((c) => c.classList.remove("active"));
+            btn.classList.add("active");
+            document.getElementById("tab-" + targetTab)?.classList.add("active");
+          });
+        });
+
+        // Dropzone drag & drop handling
+        const dropzone = document.getElementById("dropzoneBox");
+        const fileInput = document.getElementById("studentsCsv");
+        const fileBox = document.getElementById("fileSelectedBox");
+        const fileNameEl = document.getElementById("fileSelectedName");
+        const fileSizeEl = document.getElementById("fileSelectedSize");
+        const removeFileBtn = document.getElementById("removeFileBtn");
+
+        if (dropzone && fileInput) {
+          dropzone.addEventListener("click", (e) => {
+            if (e.target !== removeFileBtn) fileInput.click();
+          });
+
+          dropzone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropzone.classList.add("dragover");
+          });
+
+          dropzone.addEventListener("dragleave", () => {
+            dropzone.classList.remove("dragover");
+          });
+
+          dropzone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropzone.classList.remove("dragover");
+            if (e.dataTransfer.files?.length) {
+              fileInput.files = e.dataTransfer.files;
+              updateFileDisplay(e.dataTransfer.files[0]);
+            }
+          });
+
+          fileInput.addEventListener("change", () => {
+            if (fileInput.files?.length) {
+              updateFileDisplay(fileInput.files[0]);
+            }
+          });
+
+          removeFileBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            fileInput.value = "";
+            fileBox.classList.remove("active");
+          });
+
+          function updateFileDisplay(file) {
+            if (!file) return;
+            fileNameEl.textContent = file.name;
+            const sizeInKb = (file.size / 1024).toFixed(1);
+            fileSizeEl.textContent = sizeInKb + " KB";
+            fileBox.classList.add("active");
+          }
+        }
+
+        // Live Clock
+        const clockEl = document.querySelector("[data-live-clock]");
+        function updateClock() {
+          if (clockEl) {
+            clockEl.textContent = new Date().toLocaleTimeString();
+          }
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Logout handling
+        document.getElementById("adminLogoutBtn")?.addEventListener("click", () => {
+          localStorage.removeItem("examguard_token");
+          localStorage.removeItem("examguard_admin_user");
+          window.location.href = "login.html";
+        });
+      });
+    </script>
   </body>
 </html>

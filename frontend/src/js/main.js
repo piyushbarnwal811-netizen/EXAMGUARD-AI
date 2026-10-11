@@ -490,26 +490,200 @@ async function uploadCsv(event) {
 
   const formData = new FormData();
   formData.append("file", uploadFile, file.name);
-  formData.append(
-    "send_invites",
-    qs("#sendInvitesOnUpload")?.checked ? "true" : "false"
-  );
+  
+  const sendInvitesEl = qs("#sendInvitesOnUpload");
+  const sendInvitesFlag = sendInvitesEl ? sendInvitesEl.checked : true;
+  formData.append("send_invites", sendInvitesFlag ? "true" : "false");
 
-  const response = await apiFetch("/admin/import-students", {
-    method: "POST",
-    headers: authHeaders(),
-    body: formData,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-    throw new Error(errorMessageFromPayload(error, "Upload failed"));
+  const submitBtn = qs("#uploadSubmitBtn");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Uploading & Sending Invites...";
   }
-  const data = await response.json();
-  renderImportResult(data);
-  setStatus(
-    `Students imported. Inserted: ${data.inserted}, updated: ${data.updated}, invites sent: ${data.invites_sent}.`,
-    data.invites_failed ? "warning" : "success"
-  );
+
+  try {
+    const response = await apiFetch("/admin/import-students", {
+      method: "POST",
+      headers: authHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(errorMessageFromPayload(error, "Upload failed"));
+    }
+    const data = await response.json();
+    renderImportResult(data);
+    const msg = `Students imported: ${data.total_students} total (Inserted: ${data.inserted}, Updated: ${data.updated}). Invites sent: ${data.invites_sent}, Failed: ${data.invites_failed}.`;
+    setStatus(msg, data.invites_failed ? "warning" : "success");
+    showToast(msg, data.invites_failed ? "warning" : "success");
+    await loadStudentsList();
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "🚀 Upload & Send Invites";
+    }
+  }
+}
+
+function showToast(message, type = "info", duration = 4500) {
+  const container = qs("#toastContainer");
+  if (!container) return;
+  const icons = {
+    success: "✅",
+    warning: "⚠️",
+    error: "❌",
+    info: "ℹ️",
+  };
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `
+    <span style="font-size: 1.2rem;">${icons[type] || "ℹ️"}</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 700; font-size: 0.8rem; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 2px;">${type}</div>
+      <div>${escapeHtml(message)}</div>
+    </div>
+  `;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateX(40px)";
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+let adminStudentsList = [];
+let currentStudentFilter = "all";
+let studentSearchQuery = "";
+
+async function loadStudentsList() {
+  if (!getToken()) return;
+  try {
+    const students = await getJson("/admin/students");
+    adminStudentsList = Array.isArray(students) ? students : [];
+    updateStudentStats();
+    renderStudentsTable();
+  } catch (error) {
+    console.warn("Failed to load students list", error);
+  }
+}
+
+function updateStudentStats() {
+  const total = adminStudentsList.length;
+  const sent = adminStudentsList.filter((s) => (s.invite_status || "").toUpperCase() === "SENT").length;
+  const failed = adminStudentsList.filter((s) => (s.invite_status || "").toUpperCase() === "FAILED").length;
+  const pending = adminStudentsList.filter((s) => !s.invite_status || s.invite_status.toUpperCase() === "PENDING").length;
+
+  if (qs("#statTotalStudents")) qs("#statTotalStudents").textContent = total;
+  if (qs("#statInvitesSent")) qs("#statInvitesSent").textContent = sent;
+  if (qs("#statInvitesPending")) qs("#statInvitesPending").textContent = pending + failed;
+
+  if (qs("#countFilterAll")) qs("#countFilterAll").textContent = total;
+  if (qs("#countFilterSent")) qs("#countFilterSent").textContent = sent;
+  if (qs("#countFilterPending")) qs("#countFilterPending").textContent = pending;
+  if (qs("#countFilterFailed")) qs("#countFilterFailed").textContent = failed;
+}
+
+function renderStudentsTable() {
+  const tbody = qs("#studentsTableBody");
+  if (!tbody) return;
+
+  let filtered = adminStudentsList;
+  if (currentStudentFilter === "sent") {
+    filtered = filtered.filter((s) => (s.invite_status || "").toUpperCase() === "SENT");
+  } else if (currentStudentFilter === "pending") {
+    filtered = filtered.filter((s) => !s.invite_status || s.invite_status.toUpperCase() === "PENDING");
+  } else if (currentStudentFilter === "failed") {
+    filtered = filtered.filter((s) => (s.invite_status || "").toUpperCase() === "FAILED");
+  }
+
+  if (studentSearchQuery) {
+    const q = studentSearchQuery.toLowerCase();
+    filtered = filtered.filter(
+      (s) =>
+        (s.name || "").toLowerCase().includes(q) ||
+        (s.email || "").toLowerCase().includes(q) ||
+        (s.roll_no || "").toLowerCase().includes(q)
+    );
+  }
+
+  if (!filtered.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--muted); padding: 32px;">
+          ${adminStudentsList.length === 0 ? "No students imported yet. Upload an Excel or CSV file above." : "No students match your filter or search."}
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered
+    .map((student) => {
+      const status = (student.invite_status || "PENDING").toUpperCase();
+      let badgeClass = "pending";
+      if (status === "SENT") badgeClass = "sent";
+      else if (status === "FAILED") badgeClass = "failed";
+
+      const sentAt = student.invite_sent_at ? formatDateTime(student.invite_sent_at) : "Not sent yet";
+
+      return `
+        <tr data-student-row="${student.id}">
+          <td><strong>${escapeHtml(student.roll_no || "-")}</strong></td>
+          <td>${escapeHtml(student.name || "-")}</td>
+          <td><code>${escapeHtml(student.email || "-")}</code></td>
+          <td>
+            <span class="status-tag ${badgeClass}">
+              <span class="status-tag-dot"></span>
+              ${status}
+            </span>
+          </td>
+          <td class="muted" style="font-size: 0.82rem;">${escapeHtml(sentAt)}</td>
+          <td>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="button-secondary btn-sm" data-resend-student="${student.id}">
+                ✉️ Resend
+              </button>
+              <button type="button" class="btn-icon-copy" data-copy-link="${student.id}" data-student-email="${escapeHtml(student.email)}">
+                🔗 Copy Link
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+async function resendStudentInvite(studentId) {
+  try {
+    const result = await postJson(`/admin/students/${studentId}/resend-invite`, {});
+    showToast(result.message || "Invite sent successfully!", "success");
+    await loadStudentsList();
+  } catch (error) {
+    showToast(`Failed to resend invite: ${error.message}`, "error");
+  }
+}
+
+async function resendAllInvites() {
+  const btn = qs("#resendAllInvitesBtn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Sending to all...";
+  }
+  try {
+    const data = await postJson("/admin/send-invites?resend_all=true", {});
+    const msg = `Dispatched: ${data.sent} sent, ${data.failed} failed.`;
+    showToast(msg, data.failed ? "warning" : "success");
+    setStatus(msg, data.failed ? "warning" : "success");
+    await loadStudentsList();
+  } catch (error) {
+    showToast(`Failed to send invites: ${error.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔄 Resend to All Students";
+    }
+  }
 }
 
 async function sendTestEmail() {
@@ -517,15 +691,29 @@ async function sendTestEmail() {
   const toEmail = input?.value.trim();
   if (!toEmail) {
     setStatus("Enter an email address for the delivery test.", "warning");
+    showToast("Enter an email address for the delivery test.", "warning");
     input?.focus();
     return;
+  }
+
+  const btn = qs("#btnSendTestEmail");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Sending test email...";
   }
 
   try {
     const result = await postJson("/admin/email-test", { to_email: toEmail });
     setStatus(`Test email sent to ${result.to_email}.`, "success");
+    showToast(`Test email successfully delivered to ${result.to_email}!`, "success");
   } catch (error) {
     setStatus(`Test email failed: ${error.message}`, "warning");
+    showToast(`Test email failed: ${error.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Send Delivery Test";
+    }
   }
 }
 
@@ -566,7 +754,7 @@ function renderExamHistory(exams) {
   if (!Array.isArray(exams) || !exams.length) {
     holder.innerHTML = `
       <tr>
-        <td class="table-empty" colspan="6">No exams scheduled.</td>
+        <td class="table-empty" colspan="6">No exams scheduled yet.</td>
       </tr>
     `;
     return;
@@ -579,20 +767,20 @@ function renderExamHistory(exams) {
         <tr>
           <td>
             <strong>${escapeHtml(exam.title)}</strong>
-            <p class="muted">ID ${Number(exam.id)}${exam.is_published ? "" : " / unpublished"}</p>
+            <p class="muted" style="margin: 4px 0 0; font-size: 0.78rem;">ID #${Number(exam.id)}${exam.is_published ? " • Published" : " • Unpublished"}</p>
           </td>
           <td>${escapeHtml(formatDateTime(exam.start_time))}</td>
           <td>${escapeHtml(formatDateTime(exam.end_time))}</td>
-          <td>${escapeHtml(exam.status)}</td>
-          <td>${Number(exam.students_submitted || 0)} students / ${Number(exam.total_submissions || 0)} submissions</td>
+          <td><span class="status-tag sent"><span class="status-tag-dot"></span>${escapeHtml(exam.status)}</span></td>
+          <td>${Number(exam.students_submitted || 0)} candidates / ${Number(exam.total_submissions || 0)} submissions</td>
           <td>
             <button
               type="button"
-              class="table-action"
+              class="button-secondary btn-sm"
               data-download-exam-report="${Number(exam.id)}"
               data-report-filename="${escapeHtml(fallbackName)}"
             >
-              Download
+              📥 Download Excel
             </button>
           </td>
         </tr>
@@ -627,36 +815,52 @@ async function generatePins() {
       "ExamGuard_PINs.csv"
     );
     setStatus(`Generated ${data.total_students} student PINs.`, "success");
+    showToast(`Generated & downloaded ${data.total_students} student PINs.`, "success");
   } catch (error) {
     setStatus(error.message, "warning");
+    showToast(error.message, "error");
   }
 }
 
 async function sendInvites() {
+  const btn = qs("[data-send-invites]");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Sending invites...";
+  }
   try {
     const data = await postJson("/admin/send-invites", {});
-    // New response format: { status, message, sent, failed, failed_invites? }
     if (data.status === "warning") {
       setStatus(data.message, "warning");
+      showToast(data.message, "warning");
       return;
     }
-    // Success case
-    renderImportResult({
-      total_students: data.sent + data.failed,
-      inserted: 0,
-      updated: 0,
-      invites_sent: data.sent,
-      invites_failed: data.failed,
-      failed_invites: data.failed_invites || [],
-    }, "[data-invite-result]");
-    setStatus(
-      `Invites sent: ${data.sent}, failed: ${data.failed}.`,
-      data.failed ? "warning" : "success"
+    renderImportResult(
+      {
+        total_students: data.sent + data.failed,
+        inserted: 0,
+        updated: 0,
+        invites_sent: data.sent,
+        invites_failed: data.failed,
+        failed_invites: data.failed_invites || [],
+      },
+      "[data-invite-result]"
     );
+    const msg = `Invites sent: ${data.sent}, Failed: ${data.failed}.`;
+    setStatus(msg, data.failed ? "warning" : "success");
+    showToast(msg, data.failed ? "warning" : "success");
+    await loadStudentsList();
   } catch (error) {
     setStatus(error.message, "warning");
+    showToast(error.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "✉️ Send Invites to Pending Students";
+    }
   }
 }
+
 
 async function downloadReport(contestId = null, fallbackFilename = "Exam_Report.xlsx") {
   try {
@@ -1364,17 +1568,28 @@ async function saveCodingProblem(event) {
 }
 
 async function initializeAdminDashboard() {
-  if (!qs("#adminLoginForm")) return;
-  if (!getToken()) {
-    window.location.href = 'login.html';
+  if (!qs("#adminLoginForm") && !qs("#adminDashboardContent")) return;
+  const token = getToken();
+  const loginCard = qs("#adminLoginCard");
+  const content = qs("#adminDashboardContent");
+
+  if (!token) {
+    if (loginCard) loginCard.style.display = "block";
+    if (content) content.style.display = "none";
     return;
   }
+
+  if (loginCard) loginCard.style.display = "none";
+  if (content) content.style.display = "block";
+
   await Promise.all([
+    loadStudentsList(),
     loadContestSchedule(),
     loadCodingProblem(),
     loadExamHistory(),
   ]);
 }
+
 
 async function initializeStudentAccess() {
   const isQuestionExamPage = Boolean(qs("[data-question-list]"));
@@ -1510,9 +1725,66 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus(error.message, "warning");
     }
   });
+  // Student table event delegations (Resend individual invite & Copy Link)
+  qs("#studentsTableBody")?.addEventListener("click", async (event) => {
+    const resendBtn = event.target.closest("[data-resend-student]");
+    if (resendBtn) {
+      const studentId = Number(resendBtn.dataset.resendStudent);
+      resendBtn.disabled = true;
+      resendBtn.textContent = "Sending...";
+      await resendStudentInvite(studentId);
+      resendBtn.disabled = false;
+      resendBtn.textContent = "✉️ Resend";
+      return;
+    }
+
+    const copyBtn = event.target.closest("[data-copy-link]");
+    if (copyBtn) {
+      const studentId = copyBtn.dataset.copyLink;
+      const student = adminStudentsList.find((s) => String(s.id) === String(studentId));
+      if (student) {
+        // Construct standard invite link or prompt
+        const baseUrl = window.location.origin;
+        const link = `${baseUrl}/exam?student_id=${student.id}&roll=${encodeURIComponent(student.roll_no || "")}`;
+        try {
+          await navigator.clipboard.writeText(link);
+          showToast(`Exam link for ${student.name} copied to clipboard!`, "success");
+        } catch {
+          prompt("Copy candidate exam link:", link);
+        }
+      }
+    }
+  });
+
+  // Search input filter for students
+  qs("#studentSearchInput")?.addEventListener("input", (e) => {
+    studentSearchQuery = e.target.value.trim();
+    renderStudentsTable();
+  });
+
+  // Filter chips (All, Sent, Pending, Failed)
+  document.querySelectorAll("[data-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-filter]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentStudentFilter = btn.dataset.filter;
+      renderStudentsTable();
+    });
+  });
+
+  // Refresh students button
+  qs("#btnRefreshStudents")?.addEventListener("click", async () => {
+    showToast("Refreshing student list...", "info", 1500);
+    await loadStudentsList();
+  });
+
+  // Resend all invites button
+  qs("#resendAllInvitesBtn")?.addEventListener("click", resendAllInvites);
+
   initializeAdminDashboard().catch(() => {});
   initializeStudentAccess();
 });
+
 
 window.addEventListener("pagehide", () => {
   if (!localStorage.getItem("examguard_session_id")) return;

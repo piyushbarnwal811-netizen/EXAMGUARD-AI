@@ -1,31 +1,45 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Coding Contest | ExamGuard Pro</title>
+    <title>Proctored Assessment | ExamGuard AI</title>
     <link rel="stylesheet" href="../css/style.css" />
   </head>
   <body>
-    <div id="sebGate" style="display:none;position:fixed;inset:0;z-index:9999;background:#fff;align-items:center;justify-content:center;padding:24px">
-      <div style="max-width:700px;width:100%;border:1px solid #e5e7eb;border-radius:16px;padding:32px;text-align:center;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,0.08)">
-        <p class="eyebrow">Secure Exam</p>
-        <h1 style="font-size:28px;margin:8px 0">Safe Exam Browser Required</h1>
-        <p class="muted" id="gateMsg">Aapka exam secure browser me hi khulega. Checking...</p>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px">
-          <button id="gateLaunchSEB" type="button" style="padding:14px 20px;border-radius:10px;font-weight:600;background:#2563eb;color:#fff;border:none;cursor:pointer">Safe Browser me Exam Open Karo</button>
-          <a id="gateDownloadSeb" href="#" style="padding:14px 20px;border-radius:10px;font-weight:600;background:#f3f4f6;color:#111;border:1px solid #e5e7eb;text-decoration:none;text-align:center">SEB Config Download (.seb)</a>
-          <a id="gateDownloadExe" href="#" style="padding:14px 20px;border-radius:10px;font-weight:600;background:#f3f4f6;color:#111;border:1px solid #e5e7eb;text-decoration:none;text-align:center">Safe Browser Download (.exe)</a>
-          <p class="muted" style="font-size:13px">Download ke baad .seb file par double-click karo - exam auto open hoga.</p>
-          <button id="gateContinue" type="button" style="opacity:0.6;font-size:13px;background:transparent;border:none;cursor:pointer;text-decoration:underline">Normal browser me continue karo (Not Recommended)</button>
+    <!-- Modern SEB Gate Overlay -->
+    <div id="sebGate" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(5,9,18,0.92);align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(24px);">
+      <div class="seb-gate-modern">
+        <div class="hero-shield-badge">🔒 Secure Environment Verification</div>
+        <h1 style="font-size:2rem;margin:12px 0 8px;background:linear-gradient(135deg,#fff 0%,#00f2fe 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Safe Exam Browser Required</h1>
+        <p class="muted" id="gateMsg" style="max-width:540px;margin:0 auto 24px;line-height:1.5;">This proctored assessment requires a secured lockdown browser to ensure test integrity.</p>
+        
+        <div style="display:flex;flex-direction:column;gap:12px;max-width:440px;margin:0 auto;">
+          <button id="gateLaunchSEB" type="button" class="btn-glow" style="padding:14px 20px;font-size:1rem;">
+            🚀 Open Exam in Safe Browser
+          </button>
+          <a id="gateDownloadSeb" href="#" class="button button-secondary" style="padding:12px 20px;text-align:center;">
+            ⬇️ Download SEB Config (.seb)
+          </a>
+          <a id="gateDownloadExe" href="#" class="button button-secondary" style="padding:12px 20px;text-align:center;">
+            💻 Download Safe Browser (.exe)
+          </a>
+          <p class="muted" style="font-size:12px;margin-top:8px;">
+            After downloading, double-click the <code>.seb</code> file to automatically launch your verified test session.
+          </p>
+          <button id="gateContinue" type="button" style="opacity:0.65;font-size:12px;background:transparent;border:none;color:#94a3b8;cursor:pointer;text-decoration:underline;margin-top:4px;">
+            Continue in Standard Browser Mode (Proctoring &amp; Lockdown Enforced)
+          </button>
         </div>
-        <p class="muted" id="gateTokenInfo" style="margin-top:16px;font-size:12px"></p>
+        <p class="muted" id="gateTokenInfo" style="margin-top:20px;font-size:11px;font-family:monospace;letter-spacing:0.5px;"></p>
       </div>
     </div>
+
+    <!-- Exam Topbar -->
     <header class="shell topbar contest-topbar">
       <div>
-        <div class="brand">ExamGuard Pro</div>
-        <p class="muted" data-contest-status>Syncing server time...</p>
+        <div class="brand">ExamGuard AI</div>
+        <p class="muted" data-contest-status>Syncing exam security matrix...</p>
         <div class="security-strip" aria-label="Exam security status">
           <span class="status-pill" data-lockdown-indicator><span class="status-dot"></span><span data-lockdown-status>Fullscreen inactive</span></span>
           <span class="status-pill" data-camera-indicator><span class="status-dot"></span><span data-camera-status>Camera not started</span></span>
@@ -38,43 +52,113 @@
         <button type="button" data-camera-start>Start Camera</button>
         <button type="button" class="button-secondary" data-camera-stop disabled>Stop Camera</button>
         <button type="button" data-location-send>Send Location</button>
-        <button type="button" id="downloadSafeBrowser" class="button-secondary">Download Safe Browser</button>
-        <button type="button" id="launchSEB" class="button-secondary">Launch in SEB</button>
+        <button type="button" id="downloadSafeBrowser" class="button-secondary">SEB Installer</button>
+        <button type="button" id="launchSEB" class="button-secondary">Launch SEB</button>
       </nav>
     </header>
+
+    <!-- Main Exam Shell -->
     <main class="shell contest-shell" data-coding-contest>
+      <!-- PIN Gate -->
       <section class="exam-pin-gate" data-invite-pin-gate hidden>
-        <div><p class="eyebrow">Student PIN</p><h1>Enter Exam PIN</h1><p class="muted">Use the PIN from your email.</p></div>
+        <div class="hero-shield-badge">🔑 One-Time Passcode</div>
+        <h1>Enter Student PIN</h1>
+        <p class="muted">Enter the 6-digit verification PIN issued by your exam administrator.</p>
         <form id="invitePinForm" class="pin-gate-form">
-          <label>Generated PIN<input name="pin" type="password" minlength="6" maxlength="6" autocomplete="one-time-code" required /></label>
-          <button type="submit">Unlock Exam</button>
+          <label>
+            6-Digit PIN
+            <input name="pin" type="password" minlength="6" maxlength="6" autocomplete="one-time-code" placeholder="••••••" required />
+          </label>
+          <button type="submit" class="btn-glow">Unlock Proctored Exam</button>
         </form>
       </section>
+
+      <!-- Precheck Panel -->
       <section class="exam-precheck" data-precheck-panel hidden>
-        <div><p class="eyebrow">Exam Readiness</p><h1>Security Check</h1><p class="muted" data-precheck-copy>Complete the checks to unlock the contest.</p></div>
+        <div>
+          <div class="hero-shield-badge">⚡ Diagnostics</div>
+          <h1>System Readiness Verification</h1>
+          <p class="muted" data-precheck-copy>Verify camera, location, and fullscreen security before exam activation.</p>
+        </div>
         <div class="precheck-list">
           <div class="precheck-item" data-precheck-system><span class="status-dot"></span><div><strong>System</strong><span>Waiting</span></div></div>
-          <div class="precheck-item" data-precheck-camera><span class="status-dot"></span><div><strong>Camera</strong><span>Waiting</span></div></div>
+          <div class="precheck-item" data-precheck-camera><span class="status-dot"></span><div><strong>Webcam</strong><span>Waiting</span></div></div>
           <div class="precheck-item" data-precheck-location><span class="status-dot"></span><div><strong>Location</strong><span>Waiting</span></div></div>
-          <div class="precheck-item" data-precheck-fullscreen><span class="status-dot"></span><div><strong>Fullscreen</strong><span>Waiting</span></div></div>
+          <div class="precheck-item" data-precheck-fullscreen><span class="status-dot"></span><div><strong>Lockdown</strong><span>Waiting</span></div></div>
         </div>
-        <div class="actions"><button type="button" data-precheck-start>Start Checks</button></div>
+        <div class="actions">
+          <button type="button" class="btn-glow" data-precheck-start>Initiate Security Checks</button>
+        </div>
       </section>
+
+      <!-- Floating Proctor Camera Strip -->
       <section class="proctor-strip" data-camera-panel>
-        <div><p class="eyebrow">Live Proctoring</p><h2>Webcam</h2></div>
+        <div>
+          <div class="eyebrow">AI Proctor Vision</div>
+          <h2 style="font-size:1.1rem;margin-bottom:6px;">Webcam Feed</h2>
+          <p class="muted" style="font-size:0.75rem;margin:0;">Active Face &amp; Gaze Tracker</p>
+        </div>
         <video id="cameraPreview" class="video-box proctor-video" autoplay muted playsinline></video>
       </section>
-      <section class="contest-lock" data-lock-screen hidden><p class="eyebrow" data-lock-state>Locked</p><h1 data-lock-title>Contest Locked</h1><div class="countdown" data-lock-countdown>--:--:--</div><p class="muted" data-lock-copy>Waiting for the scheduled start time.</p></section>
+
+      <!-- Contest Lock Screen -->
+      <section class="contest-lock" data-lock-screen hidden>
+        <div class="hero-shield-badge" data-lock-state>SCHEDULED</div>
+        <h1 data-lock-title>Contest Locked</h1>
+        <div class="countdown" data-lock-countdown>--:--:--</div>
+        <p class="muted" data-lock-copy>Waiting for scheduled contest start time.</p>
+      </section>
+
+      <!-- Coding Workspace -->
       <section class="contest-workspace" data-workspace hidden>
-        <aside class="contest-panel problem-pane"><p class="eyebrow">Problem</p><div class="student-problem-tabs" data-problem-tabs></div><h2 data-problem-title>Loading...</h2><div class="problem-copy" data-problem-body></div><div class="sample-list" data-visible-samples></div></aside>
+        <aside class="contest-panel problem-pane">
+          <div class="eyebrow">Problem Statement</div>
+          <div class="student-problem-tabs" data-problem-tabs></div>
+          <h2 data-problem-title>Loading problem...</h2>
+          <div class="problem-copy" data-problem-body></div>
+          <div class="sample-list" data-visible-samples></div>
+        </aside>
+
         <section class="contest-panel editor-pane">
-          <div class="editor-toolbar"><label>Language <select id="languageSelect"><option value="python">Python</option><option value="cpp">C++</option><option value="java">Java</option></select></label><div class="toolbar-actions"><button type="button" data-run-samples>Run Samples</button><button type="button" data-submit-code>Submit Code</button></div><div class="contest-clock" data-contest-clock>--:--:--</div></div>
+          <div class="editor-toolbar">
+            <label>
+              Language
+              <select id="languageSelect">
+                <option value="python">Python 3</option>
+                <option value="cpp">C++ 17</option>
+                <option value="java">Java 17</option>
+              </select>
+            </label>
+            <div class="toolbar-actions">
+              <button type="button" class="button-secondary" data-run-samples>▶ Run Samples</button>
+              <button type="button" class="button" data-submit-code>🚀 Submit Code</button>
+            </div>
+            <div class="contest-clock" data-contest-clock>--:--:--</div>
+          </div>
           <div id="monacoEditor" class="editor-host"></div>
         </section>
-        <aside class="contest-panel results-pane"><p class="eyebrow">Results</p><h2 data-score-title>No Run Yet</h2><div class="case-results" data-result-panel></div><section class="ai-debug-result" data-ai-debugger hidden aria-live="polite"></section></aside>
+
+        <aside class="contest-panel results-pane">
+          <div class="eyebrow">Execution Console</div>
+          <h2 data-score-title>No Run Yet</h2>
+          <div class="case-results" data-result-panel></div>
+          <section class="ai-debug-result" data-ai-debugger hidden aria-live="polite"></section>
+        </aside>
       </section>
     </main>
-    <div class="modal-backdrop" data-timeout-modal hidden><section class="modal"><p class="eyebrow">Time Expired</p><h2>Submitting Automatically</h2><p class="muted">Your editor is locked.</p><div class="actions"><button type="button" data-modal-close>OK</button></div></section></div>
+
+    <!-- Timeout Modal -->
+    <div class="modal-backdrop" data-timeout-modal hidden>
+      <section class="modal">
+        <div class="eyebrow">Session Ended</div>
+        <h2>Time Expired</h2>
+        <p class="muted">Your exam time limit has ended. Your answers and code have been submitted automatically.</p>
+        <div class="actions">
+          <button type="button" data-modal-close>OK, View Submission</button>
+        </div>
+      </section>
+    </div>
+
     <script src="../js/main.js"></script>
     <script src="../js/tracking.js"></script>
     <script src="../js/camera.js"></script>
@@ -90,28 +174,31 @@
   const gate = document.getElementById("sebGate");
   const msg = document.getElementById("gateMsg");
   const tokenInfo = document.getElementById("gateTokenInfo");
-  if(tokenInfo) tokenInfo.textContent = token ? "Token: "+token.slice(0,10)+"..." : "No token - open fresh email link";
+  if(tokenInfo) tokenInfo.textContent = token ? "Verified Session: "+token.slice(0,12)+"..." : "No session token - please use your email invite link";
   const dlSeb = document.getElementById("gateDownloadSeb");
   if(dlSeb) dlSeb.href = token ? API+"/download/seb-config?token="+encodeURIComponent(token) : API+"/download/seb-config";
   const dlExe = document.getElementById("gateDownloadExe");
   if(dlExe) dlExe.href = API+"/download/safe-browser";
   function isSEB(){ return /SEB|SafeExamBrowser/i.test(navigator.userAgent) || !!window.SafeExamBrowser; }
   const hasToken = !!token;
-  // Only show gate if token present. If no token, let normal login flow handle.
   if(hasToken && !isSEB()){
     gate.style.display="flex";
-    msg.textContent="Aap normal browser me ho. Safe Browser download karo, fir exam open hoga.";
+    msg.textContent="This assessment requires Safe Exam Browser. Download the configuration and launcher below to begin.";
   } else if(hasToken && isSEB()){
     gate.style.display="none";
   }
   document.getElementById("gateLaunchSEB")?.addEventListener("click", function(){
-    if(!token){ alert("Token missing! Email se fresh link open karo"); return; }
+    if(!token){ alert("Session token missing! Please open the fresh link from your email."); return; }
     const host = location.host;
     const sebUrl = "sebs://"+host+"/exam?token="+encodeURIComponent(token);
     window.location.href = sebUrl;
-    setTimeout(function(){ if(!document.hidden){ msg.textContent="SEB nahi mila. Pehle Config + Safe Browser download karo, fir .seb file open karo."; } }, 1500);
+    setTimeout(function(){ if(!document.hidden){ msg.textContent="Safe Exam Browser was not detected. Please install SEB and open the .seb file."; } }, 1500);
   });
-  document.getElementById("gateContinue")?.addEventListener("click", function(){ if(confirm("Normal browser me exam secure nahi hoga. Continue?")){ gate.style.display="none"; }});
+  document.getElementById("gateContinue")?.addEventListener("click", function(){
+    if(confirm("Continuing in normal browser mode will enforce webcam AI proctoring and fullscreen monitoring. Proceed?")){
+      gate.style.display="none";
+    }
+  });
   document.getElementById("downloadSafeBrowser")?.addEventListener("click", function(){ window.location.href = API+"/download/safe-browser"; });
   document.getElementById("launchSEB")?.addEventListener("click", function(){ window.location.href = token ? API+"/download/seb-config?token="+encodeURIComponent(token) : API+"/download/seb-config"; });
   document.getElementById("gateDownloadExe")?.addEventListener("click", function(e){ e.preventDefault(); window.location.href = API+"/download/safe-browser"; });

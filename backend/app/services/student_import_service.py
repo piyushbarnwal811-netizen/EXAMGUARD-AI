@@ -47,8 +47,11 @@ class ImportedStudentRow(BaseModel):
         return normalized or None
 
 
+import re
+
 def _normalize_header(value: object) -> str:
-    return str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    s = str(value or "").strip().lower()
+    return re.sub(r"[\s\-_.\t/()]+", "_", s).strip("_")
 
 
 def _cell(value: Any) -> str:
@@ -65,6 +68,11 @@ def _column_for(
         column = columns_by_header.get(alias)
         if column is not None:
             return column
+    # Also check if any key contains the alias or alias contains key
+    for norm_key, orig_col in columns_by_header.items():
+        for alias in aliases:
+            if norm_key == alias or (len(alias) >= 4 and alias in norm_key):
+                return orig_col
     return None
 
 
@@ -87,17 +95,73 @@ def _read_sheet(content: bytes, filename: str) -> pd.DataFrame:
     buffer = io.BytesIO(content)
     try:
         if suffix == ".csv":
-            return pd.read_csv(buffer, dtype=str, encoding="utf-8-sig")
+            try:
+                return pd.read_csv(buffer, dtype=str, encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                buffer.seek(0)
+                return pd.read_csv(buffer, dtype=str, encoding="latin1")
         return pd.read_excel(buffer, dtype=str)
-    except UnicodeDecodeError as exc:
-        raise ValueError("CSV must be encoded as UTF-8.") from exc
-    except ImportError as exc:
-        raise ValueError(
-            "This Excel format requires an optional parser dependency. "
-            "Use .xlsx or install the missing Excel reader."
-        ) from exc
     except Exception as exc:
-        raise ValueError("The student sheet could not be read.") from exc
+        raise ValueError(f"The student sheet could not be read: {exc}") from exc
+
+
+NAME_ALIASES = (
+    "name",
+    "student_name",
+    "studentname",
+    "full_name",
+    "fullname",
+    "candidate_name",
+    "candidatename",
+    "student",
+    "candidate",
+    "first_name",
+    "firstname",
+    "user_name",
+    "username",
+    "naam",
+    "name_of_student",
+    "student_full_name",
+)
+
+EMAIL_ALIASES = (
+    "email",
+    "email_id",
+    "emailid",
+    "student_email",
+    "studentemail",
+    "mail",
+    "mail_id",
+    "mailid",
+    "e_mail",
+    "email_address",
+    "emailaddress",
+    "candidate_email",
+    "user_email",
+    "contact_email",
+    "student_mail",
+)
+
+ROLL_NO_ALIASES = (
+    "roll_no",
+    "rollno",
+    "roll_number",
+    "rollnumber",
+    "roll",
+    "student_id",
+    "studentid",
+    "reg_no",
+    "regno",
+    "registration_no",
+    "registration_number",
+    "enrollment_no",
+    "enrollment",
+    "id",
+    "prn",
+    "usn",
+    "sr_no",
+    "serial_no",
+)
 
 
 def parse_student_sheet(content: bytes, filename: str) -> list[ImportedStudentRow]:
@@ -108,26 +172,18 @@ def parse_student_sheet(content: bytes, filename: str) -> list[ImportedStudentRo
     columns_by_header = {
         _normalize_header(column): column for column in dataframe.columns
     }
-    name_column = _column_for(
-        columns_by_header,
-        ("name", "student_name", "full_name"),
-    )
-    email_column = _column_for(
-        columns_by_header,
-        ("email", "email_id", "student_email"),
-    )
-    roll_no_column = _column_for(
-        columns_by_header,
-        ("roll_no", "roll", "roll_number", "student_id"),
-    )
+    name_column = _column_for(columns_by_header, NAME_ALIASES)
+    email_column = _column_for(columns_by_header, EMAIL_ALIASES)
+    roll_no_column = _column_for(columns_by_header, ROLL_NO_ALIASES)
 
     missing = []
     if name_column is None:
-        missing.append("name")
+        missing.append("name (e.g. 'Name', 'Student Name')")
     if email_column is None:
-        missing.append("email")
+        missing.append("email (e.g. 'Email', 'Email ID')")
     if missing:
         raise ValueError(f"Sheet is missing required columns: {', '.join(missing)}.")
+
 
     students: list[ImportedStudentRow] = []
     errors: list[dict[str, object]] = []

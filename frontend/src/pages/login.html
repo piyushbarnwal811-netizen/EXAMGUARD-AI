@@ -3,59 +3,127 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login | ExamGuard Pro</title>
+    <title>Authentication Portal | ExamGuard AI</title>
     <link rel="stylesheet" href="../css/style.css" />
     <style>
-      .tabs { display:flex; gap:8px; margin-bottom:16px; }
-      .tab-btn { flex:1; padding:10px; cursor:pointer; background:#f0f0f0; border:none; border-radius:4px; }
-      .tab-btn.active { background:#0066cc; color:#fff; }
-      .form-wrapper { display:none; }
-      .form-wrapper.active { display:block; }
+      .portal-toggle {
+        display: flex;
+        background: rgba(2, 6, 23, 0.6);
+        padding: 4px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        margin-bottom: 24px;
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 10px 16px;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        color: var(--muted);
+        font-weight: 700;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: none;
+        min-height: 40px;
+      }
+      .tab-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.05);
+        box-shadow: none;
+        transform: none;
+      }
+      .tab-btn.active {
+        background: linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(79, 172, 254, 0.2) 100%);
+        color: var(--accent);
+        border: 1px solid rgba(0, 242, 254, 0.4);
+        box-shadow: 0 0 16px rgba(0, 242, 254, 0.15);
+      }
+      .form-wrapper { display: none; animation: fadeIn 0.3s ease; }
+      .form-wrapper.active { display: block; }
     </style>
   </head>
   <body>
-    <main class="shell auth-shell">
-      <section class="panel">
-        <div class="tabs">
-          <button type="button" class="tab-btn active" data-tab="student">Student Portal</button>
-          <button type="button" class="tab-btn" data-tab="admin">Admin Portal</button>
+    <!-- Topbar -->
+    <header class="shell topbar" style="margin-bottom: 0;">
+      <div>
+        <div class="brand">ExamGuard AI</div>
+        <p class="muted">Security &amp; Integrity Verification Gate</p>
+      </div>
+      <nav class="nav">
+        <a class="button button-secondary" href="../../index.html">← Back to Home</a>
+      </nav>
+    </header>
+
+    <main class="shell auth-shell" style="min-height: calc(100vh - 120px); padding: 40px 16px;">
+      <section class="panel" style="width: min(480px, 100%); margin: 0 auto;">
+        <div class="hero-shield-badge">🛡️ Secure Exam Access</div>
+        
+        <!-- Portal Switcher -->
+        <div class="portal-toggle">
+          <button type="button" class="tab-btn active" data-tab="student">🎓 Student Portal</button>
+          <button type="button" class="tab-btn" data-tab="admin">⚙️ Admin Center</button>
         </div>
 
+        <!-- Student Form -->
         <form id="student-form" class="form-wrapper active">
-          <p class="eyebrow">Student access</p>
-          <h1>ExamGuard Pro</h1>
-          <p class="muted">Open your emailed exam invitation link to begin, or enter a PIN if your admin issued one.</p>
+          <h1>Student Access</h1>
+          <p class="muted" style="margin-bottom: 20px;">
+            Enter your Roll Number and 6-digit PIN. If you received an invitation email, clicking your direct email link starts the exam automatically without manual login.
+          </p>
 
           <label>
-            Roll Number
-            <input name="roll_no" type="text" placeholder="ROLL001" required />
+            Roll Number / Registration ID
+            <input name="roll_no" type="text" placeholder="e.g. ROLL001 or STUDENT-101" required autocomplete="username" />
           </label>
           <label>
-            Student PIN
-            <input name="pin" type="password" minlength="6" maxlength="6" required />
+            6-Digit Student PIN
+            <input name="pin" type="password" minlength="6" maxlength="6" placeholder="••••••" required autocomplete="current-password" />
           </label>
-          <button type="submit">Login</button>
+          <button type="submit" class="btn-glow" style="margin-top: 10px;">
+            🔓 Start Verified Exam
+          </button>
         </form>
 
+        <!-- Admin Form -->
         <form id="admin-form" class="form-wrapper">
-          <p class="eyebrow">Admin access</p>
-          <h1>ExamGuard Pro</h1>
-          <p class="muted">Sign in with your admin credentials.</p>
+          <h1>Admin Sign In</h1>
+          <p class="muted" style="margin-bottom: 20px;">
+            Sign in to manage student imports, send exam invite links, configure AI questions, and monitor real-time exam integrity.
+          </p>
 
           <label>
-            Email / Username
-            <input name="email" type="text" placeholder="admin@example.com" required />
+            Admin Username
+            <input name="email" type="text" value="admin" placeholder="admin" required autocomplete="username" />
           </label>
           <label>
             Password
-            <input name="password" type="password" required />
+            <input name="password" type="password" value="admin123" placeholder="••••••••" required autocomplete="current-password" />
           </label>
-          <button type="submit">Login</button>
+          
+          <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button type="submit" class="btn-glow" style="flex: 1;">
+              Sign In to Dashboard
+            </button>
+            <button type="button" class="button-secondary btn-sm" id="btnFillDemo" style="min-height: 46px;">
+              ⚡ Fill Demo
+            </button>
+          </div>
         </form>
 
-        <p class="status" data-status>Waiting for login.</p>
+        <p class="status" data-status style="margin-top: 20px;">Waiting for credentials verification.</p>
       </section>
     </main>
+
     <script src="../js/main.js"></script>
+    <script>
+      document.getElementById("btnFillDemo")?.addEventListener("click", () => {
+        const emailInput = document.querySelector("#admin-form input[name='email']");
+        const passInput = document.querySelector("#admin-form input[name='password']");
+        if (emailInput) emailInput.value = "admin";
+        if (passInput) passInput.value = "admin123";
+      });
+    </script>
   </body>
 </html>

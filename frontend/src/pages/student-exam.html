@@ -3,41 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Secure Exam | ExamGuard Pro</title>
+  <title>Secure Exam Verification | ExamGuard AI</title>
   <base href="/src/pages/" />
   <link rel="stylesheet" href="../css/style.css" />
-  <style>
-    .seb-gate{max-width:700px;margin:60px auto;padding:32px;border:1px solid #e5e7eb;border-radius:16px;text-align:center;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,0.08)}
-    .seb-gate h1{font-size:28px;margin-bottom:8px}
-    .seb-actions{display:flex;flex-direction:column;gap:12px;margin-top:24px}
-    .seb-actions button, .seb-actions a{padding:14px 20px;border-radius:10px;font-weight:600;cursor:pointer;text-decoration:none}
-    .btn-primary{background:#2563eb;color:#fff;border:none}
-    .btn-secondary{background:#f3f4f6;color:#111;border:1px solid #e5e7eb}
-  </style>
 </head>
 <body>
-  <!-- SEB CHECK GATE - Normal browser me ye dikhega -->
-  <div id="sebGate" class="seb-gate">
-    <p class="eyebrow">🔒 Secure Exam</p>
-    <h1>Safe Exam Browser Required</h1>
-    <p class="muted" id="gateMsg">Aapka exam secure browser me hi khulega. Checking...</p>
-    <div class="seb-actions">
-      <button id="launchSEB" class="btn-primary">🚀 Safe Browser me Exam Open Karo</button>
-      <a id="downloadSebConfig" class="btn-secondary" href="#">⬇️ SEB Config Download Karo (.seb)</a>
-      <a id="downloadSafeBrowser" class="btn-secondary" href="#">💻 Safe Browser Download Karo (.exe)</a>
-      <p class="muted" style="font-size:13px">Download ke baad .seb file par double click karo, exam auto open hoga.</p>
-      <button id="continueNormal" class="btn-secondary" style="opacity:0.6;font-size:13px">Normal browser me continue karo (Not Recommended)</button>
+  <!-- SEB CHECK GATE -->
+  <div id="sebGate" style="max-width:680px;margin:60px auto;padding:16px;">
+    <div class="seb-gate-modern">
+      <div class="hero-shield-badge">🔒 Safe Exam Browser Required</div>
+      <h1 style="font-size:2.2rem;margin:12px 0 8px;background:linear-gradient(135deg,#fff 0%,#00f2fe 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Secure Exam Verification</h1>
+      <p class="muted" id="gateMsg" style="max-width:520px;margin:0 auto 24px;line-height:1.5;">This exam requires a secure lockdown environment to prevent cheating.</p>
+      
+      <div style="display:flex;flex-direction:column;gap:12px;max-width:440px;margin:0 auto;">
+        <button id="launchSEB" class="btn-glow" style="padding:14px 20px;font-size:1rem;">
+          🚀 Open in Safe Exam Browser
+        </button>
+        <a id="downloadSebConfig" class="button button-secondary" href="#" style="padding:12px 20px;text-align:center;">
+          ⬇️ Download SEB Config (.seb)
+        </a>
+        <a id="downloadSafeBrowser" class="button button-secondary" href="#" style="padding:12px 20px;text-align:center;">
+          💻 Download Safe Browser (.exe)
+        </a>
+        <p class="muted" style="font-size:12px;margin-top:8px;">
+          After downloading, double-click the <code>.seb</code> file to automatically launch the verified proctored session.
+        </p>
+        <button id="continueNormal" type="button" style="opacity:0.65;font-size:12px;background:transparent;border:none;color:#94a3b8;cursor:pointer;text-decoration:underline;">
+          Continue in standard browser mode (Proctored)
+        </button>
+      </div>
+      <p class="muted" id="tokenInfo" style="margin-top:20px;font-size:11px;font-family:monospace;letter-spacing:0.5px;"></p>
     </div>
-    <p class="muted" id="tokenInfo" style="margin-top:16px;font-size:12px"></p>
   </div>
 
-  <!-- ASLI EXAM - Sirf SEB me ye dikhega -->
+  <!-- VERIFIED EXAM CONTAINER -->
   <div id="examContent" hidden>
-    <header class="shell topbar"><div class="brand">ExamGuard Pro - Secure Mode ✅</div></header>
+    <header class="shell topbar">
+      <div>
+        <div class="brand">ExamGuard AI</div>
+        <p class="muted">Secure Mode Active ✅</p>
+      </div>
+    </header>
     <main class="shell">
-      <section class="exam-pin-gate" data-invite-pin-gate>
-        <h1>Starting Exam</h1>
-        <p class="muted" data-invite-link-status>Verifying your one-time exam link...</p>
+      <section class="card" data-invite-pin-gate style="max-width:540px;margin:40px auto;text-align:center;">
+        <div class="hero-shield-badge">🚀 Verifying Link</div>
+        <h1>Initializing Assessment</h1>
+        <p class="muted" data-invite-link-status>Validating your cryptographic one-time exam token...</p>
       </section>
     </main>
   </div>
@@ -46,10 +57,9 @@
   <script>
     const apiBase = window.EXAMGUARD_API_BASE || "https://examguard-ai-317p.onrender.com/api";
     const token = new URLSearchParams(location.search).get('token') || new URLSearchParams(location.search).get('invite');
-    document.getElementById('tokenInfo').textContent = token ? 'Token: ' + token.slice(0,12)+'...' : 'Token missing! Mail se fresh link open karo.';
+    document.getElementById('tokenInfo').textContent = token ? 'Token: ' + token.slice(0,12)+'...' : 'Token missing! Please open the fresh link from your email.';
     document.getElementById('downloadSafeBrowser').href = `${apiBase}/download/safe-browser`;
     
-    // Download links me token jodo
     if(token){
       document.getElementById('downloadSebConfig').href = `${apiBase}/download/seb-config?token=${encodeURIComponent(token)}`;
     }
@@ -70,35 +80,26 @@
       document.getElementById('examContent').hidden = true;
     }
 
-    // Auto Check on load
     if(isSEB()){
       showExam();
     } else {
-      showGate('Aap normal browser me ho. Safe Browser me open karna hoga.');
+      showGate('Safe Exam Browser is required. Please download the config or launch SEB below.');
     }
 
-    // Launch in SEB button - sebs:// protocol
     document.getElementById('launchSEB').addEventListener('click', () => {
-      if(!token){ alert('Token nahi mila!'); return; }
+      if(!token){ alert('Session token missing!'); return; }
       const frontendHost = location.host;
-      // Try both seb and sebs
       const sebUrl = `sebs://${frontendHost}/src/pages/student-exam.html?token=${encodeURIComponent(token)}`;
-      const fallbackSebUrl = `seb://${frontendHost}/src/pages/student-exam.html?token=${encodeURIComponent(token)}`;
-      
-      // Try to open SEB
       window.location.href = sebUrl;
       setTimeout(()=> {
-        // Agar abhi bhi isi page par hai to SEB install nahi hai
         if(!document.hidden){
-          showGate('SEB install nahi mila. Pehle Download karo, fir .seb file open karo.');
-          // Auto download config
-          // window.location.href = document.getElementById('downloadSebConfig').href;
+          showGate('SEB not detected. Please install Safe Exam Browser and open the .seb configuration file.');
         }
       }, 1500);
     });
 
     document.getElementById('continueNormal').addEventListener('click', ()=>{
-      if(confirm('Normal browser me exam secure nahi hoga. Teacher ko pata chal sakta hai. Continue?')){
+      if(confirm('Continuing in standard browser mode will enforce webcam AI proctoring and fullscreen monitoring. Proceed?')){
         window.ExamGuardExamEnvironmentReady = true;
         showExam();
         window.ExamGuardStartInvite?.();
@@ -108,7 +109,6 @@
     document.getElementById('downloadSafeBrowser').addEventListener('click', (e)=>{
       e.preventDefault();
       window.location.href = `${apiBase}/download/safe-browser`;
-      setTimeout(()=> alert('Download complete hone ke baad install karo, fir "Safe Browser me Exam Open Karo" par click karo.'), 1000);
     });
   </script>
 </body>

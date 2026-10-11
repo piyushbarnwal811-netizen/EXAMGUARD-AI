@@ -40,10 +40,18 @@ from app.schemas.student import (
     StudentCsvRow,
     StudentImportResult,
 )
-from app.services.email_service import send_email, validate_email_settings, EmailConfigurationError, EmailDeliveryError
+from app.services.email_service import (
+    send_email,
+    send_smtp_batch,
+    validate_email_settings,
+    EmailConfigurationError,
+    EmailDeliveryError,
+)
 from app.services.excel_service import generate_excel_report
 from app.services.invite_service import (
     build_exam_invite_link,
+    build_invite_email_body,
+    build_invite_email_html,
     create_invite_token,
     hash_invite_token,
     send_exam_invite_email,
@@ -197,12 +205,15 @@ def _queue_invites(students: list[Student]) -> list[InviteJob]:
 
 
 async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFailure]]:
+    if not jobs:
+        return 0, []
+
     try:
         validate_email_settings()
     except RuntimeError as exc:
         return 0, [InviteFailure(email=job.email, error=str(exc)) for job in jobs]
 
-    semaphore = asyncio.Semaphore(4)
+    semaphore = asyncio.Semaphore(2)
 
     async def send_one(job: InviteJob) -> tuple[InviteJob, str | None]:
         invite_link = build_exam_invite_link(job.token)
@@ -222,15 +233,22 @@ async def _send_invite_jobs(jobs: list[InviteJob]) -> tuple[int, list[InviteFail
     outcomes = await asyncio.gather(*(send_one(job) for job in jobs))
     sent = 0
     failures: list[InviteFailure] = []
+    now = datetime.now(timezone.utc)
+
     for job, error in outcomes:
         if error:
             failures.append(InviteFailure(email=job.email, error=error))
+            if job.student:
+                job.student.invite_status = "FAILED"
         else:
-            job.student.invite_sent_at = datetime.now(timezone.utc)
-            job.student.invite_status = "SENT"
+            if job.student:
+                job.student.invite_sent_at = now
+                job.student.invite_status = "SENT"
             sent += 1
 
     return sent, failures
+
+
 
 
 async def _upsert_imported_students(
@@ -656,22 +674,103 @@ async def import_students_sheet(
         ) from exc
 
 
+@router.get("/students", response_model=None)
+async def list_students(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+):
+    result = await db.execute(select(Student).order_by(Student.roll_no))
+    students = result.scalars().all()
+    output = []
+    for stu in students:
+        output.append(
+            {
+                "id": stu.id,
+                "roll_no": stu.roll_no,
+                "name": stu.name,
+                "email": stu.email,
+                "invite_status": stu.invite_status or "PENDING",
+                "invite_sent_at": stu.invite_sent_at.isoformat() if stu.invite_sent_at else None,
+                "is_pin_used": stu.is_pin_used,
+                "is_invite_used": stu.is_invite_used,
+            }
+        )
+    return output
+
+
+@router.post("/students/{student_id}/resend-invite", response_model=None)
+async def resend_individual_student_invite(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+):
+    student = await db.get(Student, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found.",
+        )
+
+    _ensure_invite_email_configured()
+    settings = get_settings()
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        hours=settings.EXAM_INVITE_EXPIRE_HOURS
+    )
+    token = create_invite_token()
+    token_hash = hash_invite_token(token)
+
+    student.invite_token_hash = token_hash
+    student.invite_token_expires_at = expires_at
+    student.is_invite_used = False
+    await db.commit()
+
+    job = InviteJob(
+        student=student,
+        email=student.email,
+        name=student.name,
+        token=token,
+        expires_at=expires_at,
+    )
+    sent, failures = await _send_invite_jobs([job])
+    await db.commit()
+
+    if failures:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send invite email to {student.email}: {failures[0].error}",
+        )
+
+    invite_link = build_exam_invite_link(token)
+    return {
+        "status": "success",
+        "message": f"Invite email sent successfully to {student.email}.",
+        "invite_link": invite_link,
+        "student_id": student.id,
+    }
+
+
 @router.post("/send-invites", response_model=None)
 async def send_student_invites(
+    resend_all: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
     try:
-        result = await db.execute(
-            select(Student)
-            .where(or_(Student.invite_status == "PENDING", Student.invite_status.is_(None)))
-            .order_by(Student.roll_no)
-        )
+        query = select(Student)
+        if not resend_all:
+            query = query.where(
+                or_(
+                    Student.invite_status == "PENDING",
+                    Student.invite_status == "FAILED",
+                    Student.invite_status.is_(None),
+                )
+            )
+        result = await db.execute(query.order_by(Student.roll_no))
         students = result.scalars().all()
         if not students:
             return {
                 "status": "warning",
-                "message": "No pending students found to send invites. Please upload a student CSV first.",
+                "message": "No pending students found to send invites. Please upload a student sheet first or use resend all.",
                 "sent": 0,
                 "failed": 0,
                 "invites_sent": 0,
@@ -691,9 +790,6 @@ async def send_student_invites(
             ) from exc
 
         sent, failures = await _send_invite_jobs(invite_jobs)
-        for job in invite_jobs:
-            if job.student and job.student.invite_sent_at is not None:
-                job.student.invite_status = "SENT"
         await db.commit()
 
         return {

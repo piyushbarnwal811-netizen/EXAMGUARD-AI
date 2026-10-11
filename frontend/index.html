@@ -3,20 +3,85 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ExamGuard Pro</title>
+    <title>ExamGuard AI | Next-Gen AI Proctored Assessment Platform</title>
     <link rel="stylesheet" href="src/css/style.css" />
   </head>
   <body>
-    <main class="shell auth-shell">
-      <section class="panel">
-        <p class="eyebrow">Secure online exams</p>
-        <h1>ExamGuard Pro</h1>
-        <p class="muted">Student login, webcam check, lockdown mode, and admin reports.</p>
-        <div class="actions">
-          <a class="button" href="src/pages/login.html">Student Login</a>
-          <a class="button button-secondary" href="src/pages/admin.html">Admin Panel</a>
+    <!-- Topbar -->
+    <header class="shell topbar">
+      <div>
+        <div class="brand">ExamGuard AI</div>
+        <p class="muted">Intelligent AI Proctoring &amp; Assessment Security</p>
+      </div>
+      <nav class="nav">
+        <a class="button button-secondary" href="src/pages/login.html">Student Portal</a>
+        <a class="button" href="src/pages/admin.html">Admin Command Center</a>
+      </nav>
+    </header>
+
+    <main class="shell" style="max-width: 1040px; text-align: center; padding: 48px 16px;">
+      <!-- Hero Section -->
+      <section style="margin-bottom: 48px;">
+        <div class="hero-shield-badge">
+          🛡️ Advanced Autonomous AI Proctoring Platform
+        </div>
+        <h1 style="font-size: 3.5rem; max-width: 860px; margin: 0 auto 20px; line-height: 1.1;">
+          Uncompromised Integrity for Remote &amp; Coding Exams
+        </h1>
+        <p class="muted" style="font-size: 1.2rem; max-width: 680px; margin: 0 auto 36px; line-height: 1.6;">
+          Real-time MediaPipe computer vision face tracking, Safe Exam Browser lockdown, instant bulk Excel candidate invites, and automated code sandboxing.
+        </p>
+
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <a class="button" href="src/pages/login.html" style="font-size: 1.05rem; padding: 14px 32px;">
+            🚀 Student Exam Portal
+          </a>
+          <a class="button button-secondary" href="src/pages/admin.html" style="font-size: 1.05rem; padding: 14px 32px;">
+            ⚙️ Admin Command Center
+          </a>
+        </div>
+      </section>
+
+      <!-- Key Capabilities Feature Grid -->
+      <section class="hero-features-grid">
+        <div class="feature-box">
+          <div class="feature-box-icon">🤖</div>
+          <h3>AI Computer Vision Proctoring</h3>
+          <p>Continuous webcam face landmarker tracking yaw, pitch, looking away, multiple faces, and absence with instant warning logs.</p>
+        </div>
+        <div class="feature-box">
+          <div class="feature-box-icon">🔒</div>
+          <h3>Safe Exam Browser Lockdown</h3>
+          <p>Enforced fullscreen, tab-switching deterrence, clipboard block, right-click disabling, and direct integration with SEB .seb configurations.</p>
+        </div>
+        <div class="feature-box">
+          <div class="feature-box-icon">📊</div>
+          <h3>Bulk Excel &amp; Instant Invites</h3>
+          <p>Upload candidate lists from college spreadsheets or CSVs with automated one-time unique token links dispatched directly via Gmail SMTP.</p>
+        </div>
+        <div class="feature-box">
+          <div class="feature-box-icon">💻</div>
+          <h3>Isolated Code Sandbox</h3>
+          <p>Built-in Monaco Code Editor supporting Python, C++, and Java with automated hidden test cases execution and AI debugger analysis.</p>
+        </div>
+      </section>
+
+      <!-- Live Infrastructure Status Footer -->
+      <section style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 40px;">
+        <div style="text-align: left;">
+          <strong style="color: #fff; font-size: 0.95rem;">System Operational Status</strong>
+          <div class="muted" style="font-size: 0.8rem;">All proctoring algorithms and SMTP delivery services are running optimally.</div>
+        </div>
+        <div class="security-strip" style="margin-top: 0;">
+          <span class="status-pill success"><span class="status-dot"></span><span>AI Proctor Engine: Ready</span></span>
+          <span class="status-pill success"><span class="status-dot"></span><span>SMTP Dispatcher: Active</span></span>
+          <span class="status-pill success"><span class="status-dot"></span><span>Code Runner: Online</span></span>
         </div>
       </section>
     </main>
+
+    <footer style="text-align: center; padding: 32px 16px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); margin-top: 60px;">
+      <p>&copy; 2026 ExamGuard AI. Engineered for bulletproof academic and enterprise assessments.</p>
+    </footer>
   </body>
 </html>

@@ -167,6 +167,96 @@ def send_email(
     ) from last_error
 
 
+def send_smtp_batch(
+    messages: list[dict[str, Any]],
+) -> tuple[int, list[dict[str, str]]]:
+    """
+    Sends multiple emails using a single persistent SMTP connection to avoid
+    Gmail rate limits and repeated TLS handshake latency.
+    Falls back to individual sending if connection fails.
+    """
+    if not messages:
+        return 0, []
+
+    settings = _require_email_settings()
+    smtp_user = _clean_email_address(settings.SMTP_USER)
+    smtp_password = _clean_smtp_password(settings.SMTP_PASSWORD)
+
+    primary_ssl = settings.SMTP_USE_SSL or settings.SMTP_PORT == 465
+    port = settings.SMTP_PORT
+    context = ssl.create_default_context()
+
+    sent = 0
+    failures: list[dict[str, str]] = []
+
+    def make_msg(item: dict[str, Any]) -> EmailMessage:
+        msg = EmailMessage()
+        msg["From"] = _smtp_from_header(
+            settings.EMAIL_FROM,
+            smtp_user,
+            settings.SMTP_HOST,
+        )
+        msg["To"] = _clean_email_address(item["to_email"])
+        msg["Subject"] = item["subject"]
+        msg.set_content(item["body"])
+        if item.get("html_body"):
+            msg.add_alternative(item["html_body"], subtype="html")
+        return msg
+
+    try:
+        if primary_ssl:
+            smtp_conn = smtplib.SMTP_SSL(
+                settings.SMTP_HOST,
+                port,
+                timeout=settings.SMTP_TIMEOUT_SECONDS,
+                context=context,
+            )
+        else:
+            smtp_conn = smtplib.SMTP(
+                settings.SMTP_HOST,
+                port,
+                timeout=settings.SMTP_TIMEOUT_SECONDS,
+            )
+
+        with smtp_conn as server:
+            server.ehlo()
+            if not primary_ssl:
+                server.starttls(context=context)
+                server.ehlo()
+            server.login(smtp_user, smtp_password)
+
+            for item in messages:
+                recipient = item["to_email"]
+                try:
+                    msg = make_msg(item)
+                    server.send_message(msg)
+                    sent += 1
+                    logger.info("Batch email sent to %s", recipient)
+                    time.sleep(0.12)
+                except Exception as exc:
+                    logger.warning("Failed sending to %s in batch: %s", recipient, exc)
+                    failures.append({"email": recipient, "error": str(exc)})
+        return sent, failures
+    except Exception as batch_exc:
+        logger.warning(
+            "Persistent batch connection failed (%s). Falling back to individual send.",
+            batch_exc,
+        )
+        for item in messages:
+            recipient = item["to_email"]
+            try:
+                send_email(
+                    to_email=recipient,
+                    subject=item["subject"],
+                    body=item["body"],
+                    html_body=item.get("html_body"),
+                )
+                sent += 1
+            except Exception as exc:
+                failures.append({"email": recipient, "error": str(exc)})
+        return sent, failures
+
+
 def send_bulk_emails(recipients: Iterable[str], subject: str, body: str) -> int:
     sent = 0
     for recipient in recipients:
@@ -175,5 +265,5 @@ def send_bulk_emails(recipients: Iterable[str], subject: str, body: str) -> int:
             sent += 1
         except EmailDeliveryError as exc:
             logger.error("Failed to send email to %s: %s", recipient, exc)
-            # continue with next recipient
     return sent
+
