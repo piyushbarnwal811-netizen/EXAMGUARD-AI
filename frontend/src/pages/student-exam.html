@@ -5,54 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Secure Exam Verification | ExamGuard AI</title>
   <base href="/src/pages/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="../css/style.css" />
 </head>
-<body>
+<body class="exam-body-layout">
   <!-- SEB CHECK GATE -->
   <div id="sebGate" style="max-width:680px;margin:60px auto;padding:16px;">
-    <div class="seb-gate-modern">
+    <div class="seb-gate-modern exam-hero-card">
       <div class="hero-shield-badge">🔒 Safe Exam Browser Required</div>
-      <h1 style="font-size:2.2rem;margin:12px 0 8px;background:linear-gradient(135deg,#fff 0%,#00f2fe 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Secure Exam Verification</h1>
-      <p class="muted" id="gateMsg" style="max-width:520px;margin:0 auto 24px;line-height:1.5;">This exam requires a secure lockdown environment to prevent cheating.</p>
+      <h1 class="gradient-title" style="font-size:2.2rem;margin:16px 0 8px;">Secure Exam Verification</h1>
+      <p class="muted" id="gateMsg" style="max-width:520px;margin:0 auto 26px;line-height:1.6;font-size:0.95rem;">
+        This assessment requires a verified lockdown environment to protect institutional test integrity.
+      </p>
       
-      <div style="display:flex;flex-direction:column;gap:12px;max-width:440px;margin:0 auto;">
-        <button id="launchSEB" class="btn-glow" style="padding:14px 20px;font-size:1rem;">
+      <div class="seb-action-stack">
+        <button id="launchSEB" class="btn-glow" style="padding:15px 24px;font-size:1rem;width:100%;">
           🚀 Open in Safe Exam Browser
         </button>
-        <a id="downloadSebConfig" class="button button-secondary" href="#" style="padding:12px 20px;text-align:center;">
-          ⬇️ Download SEB Config (.seb)
-        </a>
-        <a id="downloadSafeBrowser" class="button button-secondary" href="#" style="padding:12px 20px;text-align:center;">
-          💻 Download Safe Browser (.exe)
-        </a>
-        <p class="muted" style="font-size:12px;margin-top:8px;">
-          After downloading, double-click the <code>.seb</code> file to automatically launch the verified proctored session.
+        <div class="seb-btn-grid">
+          <a id="downloadSebConfig" class="button button-secondary" href="#" style="padding:12px 18px;text-align:center;">
+            ⬇️ Config (.seb)
+          </a>
+          <a id="downloadSafeBrowser" class="button button-secondary" href="#" style="padding:12px 18px;text-align:center;">
+            💻 Safe Browser (.exe)
+          </a>
+        </div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0;line-height:1.4;">
+          After downloading, double-click the <code>.seb</code> configuration file to automatically launch your verified proctored session.
         </p>
-        <button id="continueNormal" type="button" style="opacity:0.65;font-size:12px;background:transparent;border:none;color:#94a3b8;cursor:pointer;text-decoration:underline;">
-          Continue in standard browser mode (Proctored)
+        <button id="continueNormal" type="button" class="link-subtle-bypass">
+          Continue in standard browser mode (Proctored with Fullscreen Lockdown)
         </button>
       </div>
-      <p class="muted" id="tokenInfo" style="margin-top:20px;font-size:11px;font-family:monospace;letter-spacing:0.5px;"></p>
+      <p class="muted" id="tokenInfo" style="margin-top:24px;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:0.5px;opacity:0.75;"></p>
     </div>
   </div>
 
   <!-- VERIFIED EXAM CONTAINER -->
   <div id="examContent" hidden>
-    <header class="shell topbar">
-      <div>
-        <div class="brand">ExamGuard AI</div>
-        <p class="muted">Secure Mode Active ✅</p>
+    <header class="shell topbar exam-proctor-header">
+      <div class="brand-security-cluster">
+        <div class="brand-shield-wrap">
+          <div class="cyber-shield-glow"></div>
+          <div class="brand">ExamGuard AI</div>
+        </div>
+        <div class="session-status-meta">
+          <span class="pulse-indicator-pill"><span class="pulse-dot"></span> SECURE MODE ACTIVE</span>
+        </div>
       </div>
     </header>
     <main class="shell">
-      <section class="card" data-invite-pin-gate style="max-width:540px;margin:40px auto;text-align:center;">
+      <section class="card exam-hero-card" data-invite-pin-gate style="max-width:560px;margin:40px auto;text-align:center;">
         <div class="hero-shield-badge">🚀 Verifying Link</div>
-        <h1>Initializing Assessment</h1>
-        <p class="muted" data-invite-link-status>Validating your cryptographic one-time exam token...</p>
+        <h1 class="gradient-title" style="margin:16px 0 8px;">Initializing Assessment</h1>
+        <p class="muted" data-invite-link-status style="font-size:0.95rem;line-height:1.5;">Validating your cryptographic one-time exam token with the security server...</p>
       </section>
     </main>
   </div>
 
+  <script src="../js/mobile_lockdown.js"></script>
   <script src="../js/main.js"></script>
   <script>
     const apiBase = window.EXAMGUARD_API_BASE || "https://examguard-ai-317p.onrender.com/api";
@@ -68,7 +84,11 @@
       const ua = navigator.userAgent;
       return /SEB|SafeExamBrowser/i.test(ua) || !!window.SafeExamBrowser || !!window.seb;
     }
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 820;
     window.ExamGuardExamEnvironmentReady = isSEB();
+    if (isMobileDevice) {
+      window.ExamGuardExamEnvironmentReady = true;
+    }
 
     function showExam(){
       document.getElementById('sebGate').hidden = true;
@@ -80,7 +100,7 @@
       document.getElementById('examContent').hidden = true;
     }
 
-    if(isSEB()){
+    if(isSEB() || isMobileDevice){
       showExam();
     } else {
       showGate('Safe Exam Browser is required. Please download the config or launch SEB below.');

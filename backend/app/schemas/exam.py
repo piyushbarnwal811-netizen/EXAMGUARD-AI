@@ -47,6 +47,33 @@ class QuestionOut(BaseModel):
     options: list[str]
 
 
+class QuestionCreate(BaseModel):
+    question_text: str = Field(..., min_length=3)
+    option_a: str = Field(..., min_length=1)
+    option_b: str = Field(..., min_length=1)
+    option_c: str = Field(..., min_length=1)
+    option_d: str = Field(..., min_length=1)
+    correct_option: str = Field(..., min_length=1, max_length=1)
+
+    @field_validator("correct_option")
+    @classmethod
+    def validate_correct_option(cls, value: str) -> str:
+        value = value.strip().upper()
+        if value not in {"A", "B", "C", "D"}:
+            raise ValueError("correct_option must be one of A, B, C, or D.")
+        return value
+
+
+class QuestionAdminOut(BaseModel):
+    id: int
+    question: str
+    option_a: str
+    option_b: str
+    option_c: str
+    option_d: str
+    correct_option: str
+
+
 class AnswerSubmit(BaseModel):
     question_id: int
     selected_option: str = Field(..., min_length=1, max_length=1)

@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.api import admin, auth, contest, exam, questions, tracking
+from app.api import admin, auth, contest, exam, invigilator_ws, proctor, questions, tracking
 from app.config import PROJECT_DIR, get_settings
 from app.db.session import init_db
 
@@ -108,3 +108,6 @@ app.include_router(exam.router, prefix="/api")
 app.include_router(questions.router, prefix="/api")
 app.include_router(tracking.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(proctor.router, prefix="/api")
+app.include_router(invigilator_ws.router, prefix="/api")
+app.include_router(invigilator_ws.rest_router, prefix="/api")

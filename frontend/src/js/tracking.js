@@ -93,7 +93,14 @@ function isExamPage() {
 }
 
 function shouldBlockMobileExam() {
-  return isExamPage() && detectMobileDevice().is_mobile_device;
+  const isMobile = detectMobileDevice().is_mobile_device;
+  if (!isMobile) return false;
+  // If URL explicitly requests desktop blocking test
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("force_block_mobile") === "true") return true;
+
+  // Mobile is fully supported for MCQ & Objective proctored exams with Mobile Lockdown
+  return false;
 }
 
 function renderMobileBlocker() {
@@ -115,7 +122,10 @@ function renderMobileBlocker() {
 }
 
 function blockMobileExam(trigger = "mobile_gate") {
-  if (!shouldBlockMobileExam()) return false;
+  if (!shouldBlockMobileExam()) {
+    reportMobileDeviceUse(trigger, "MOBILE_DEVICE_DETECTED");
+    return false;
+  }
 
   renderMobileBlocker();
   reportMobileDeviceUse(trigger, "MOBILE_DEVICE_BLOCKED");

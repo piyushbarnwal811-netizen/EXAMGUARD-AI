@@ -19,6 +19,7 @@
         </div>
       </div>
       <nav class="nav">
+        <a class="button button-primary" href="admin-live.html" style="background:linear-gradient(135deg, #0284c7, #6366f1);border:none;color:#fff;font-weight:700;">📡 Live Invigilator Cockpit</a>
         <a class="button button-secondary" href="login.html">Student Portal</a>
         <a class="button button-secondary" href="../../index.html">Home</a>
         <button type="button" class="button-danger btn-sm" id="adminLogoutBtn">Logout</button>
@@ -105,6 +106,10 @@
           <button type="button" class="admin-tab-btn" data-admin-tab="reports">
             📊 Exam Reports & History
           </button>
+          <a href="admin-live.html" class="admin-tab-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.4);color:#38bdf8;font-weight:700;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38bdf8;animation:pulse 1.5s infinite;"></span>
+            📡 Live 1:50 Cockpit
+          </a>
         </nav>
 
         <!-- TAB 1: STUDENTS & BULK INVITES -->
@@ -379,6 +384,62 @@
               </div>
             </form>
             <div class="result-list" data-problem-summary></div>
+
+            <!-- OBJECTIVE & MCQ QUESTION BANK -->
+            <section class="mcq-admin-panel" style="margin-top:40px;border-top:1px solid var(--line);padding-top:30px;">
+              <div class="panel-head">
+                <div>
+                  <div class="hero-shield-badge">📝 Multiple Choice Questions</div>
+                  <h3 style="font-size:1.3rem;margin:8px 0 4px;">Objective (MCQ) Question Bank</h3>
+                  <p class="muted">Add, preview, and manage multiple choice questions with 4 options and automated scoring.</p>
+                </div>
+              </div>
+
+              <!-- New MCQ Question Form -->
+              <form id="createMcqForm" style="background:rgba(2,6,23,0.5);border:1px solid var(--line);border-radius:12px;padding:24px;margin:20px 0;">
+                <label>
+                  Question Statement
+                  <textarea id="mcqQuestionText" name="question_text" rows="3" placeholder="e.g. Which data structure uses LIFO (Last In First Out) principle?" required></textarea>
+                </label>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0;">
+                  <label>
+                    Option A
+                    <input id="mcqOptA" name="option_a" type="text" placeholder="e.g. Queue" required />
+                  </label>
+                  <label>
+                    Option B
+                    <input id="mcqOptB" name="option_b" type="text" placeholder="e.g. Stack" required />
+                  </label>
+                  <label>
+                    Option C
+                    <input id="mcqOptC" name="option_c" type="text" placeholder="e.g. Binary Tree" required />
+                  </label>
+                  <label>
+                    Option D
+                    <input id="mcqOptD" name="option_d" type="text" placeholder="e.g. Linked List" required />
+                  </label>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                  <label style="flex:1;min-width:200px;">
+                    Correct Answer
+                    <select id="mcqCorrectOption" name="correct_option" required style="width:100%;padding:10px;border-radius:8px;background:rgba(15,23,42,0.9);color:#fff;border:1px solid var(--line);">
+                      <option value="A">Option A</option>
+                      <option value="B" selected>Option B</option>
+                      <option value="C">Option C</option>
+                      <option value="D">Option D</option>
+                    </select>
+                  </label>
+                  <button type="submit" class="btn-glow" style="margin-top:22px;padding:12px 24px;">
+                    ➕ Save MCQ Question
+                  </button>
+                </div>
+              </form>
+
+              <!-- List of Current MCQs -->
+              <div id="adminMcqList" class="mcq-admin-list" style="display:grid;gap:12px;"></div>
+            </section>
           </div>
         </section>
 

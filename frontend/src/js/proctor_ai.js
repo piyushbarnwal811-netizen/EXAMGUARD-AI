@@ -173,6 +173,7 @@ function markViolation(eventType, details = {}) {
   if (now - lastSentAt < 5000) return;
 
   proctorState.cooldowns.set(key, now);
+  window.ExamGuardInvigilatorClient?.setViolation?.(eventType, details);
   window.ExamGuardTracking?.sendEvent?.(
     eventType,
     "Camera AI detected suspicious exam behavior.",

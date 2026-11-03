@@ -345,6 +345,209 @@ async function handleAdminLogin(event) {
   }
 }
 
+const mcqState = {
+  questions: [],
+  currentIndex: 0,
+  answers: {},
+  markedForReview: new Set(),
+};
+
+function renderMcqWorkspace() {
+  const holder = qs("[data-question-list]");
+  if (!holder || !mcqState.questions.length) return;
+
+  const total = mcqState.questions.length;
+  const current = mcqState.questions[mcqState.currentIndex];
+  if (!current) return;
+  const qId = current.id;
+  const answeredCount = Object.keys(mcqState.answers).length;
+  const currentSelected = mcqState.answers[qId];
+  const isMarked = mcqState.markedForReview.has(qId);
+
+  const countBadge = qs("[data-mcq-count-badge]");
+  if (countBadge) countBadge.textContent = `${answeredCount}/${total} Answered`;
+
+  holder.innerHTML = `
+    <div class="mcq-split-layout">
+      <!-- Left: Active Question Card -->
+      <section class="mcq-question-card">
+        <div class="mcq-q-header">
+          <div class="mcq-q-meta">
+            <span class="mcq-q-number-pill">Question ${mcqState.currentIndex + 1} of ${total}</span>
+            <span class="mcq-type-badge">Multiple Choice (MCQ)</span>
+            <span class="mcq-points-badge">+4.0 Marks</span>
+          </div>
+          <div class="mcq-q-actions">
+            <button type="button" class="btn-mcq-tool ${isMarked ? 'active' : ''}" id="btnMarkReview" title="Mark this question to review later">
+              ${isMarked ? '★ Marked for Review' : '☆ Mark for Review'}
+            </button>
+            <button type="button" class="btn-mcq-tool" id="btnClearResponse" title="Clear your selected answer">
+              🧹 Clear Choice
+            </button>
+          </div>
+        </div>
+
+        <div class="mcq-q-body">
+          <h2 class="mcq-q-title">${escapeHtml(current.question)}</h2>
+          
+          <div class="mcq-options-grid">
+            ${(current.options || [])
+              .map((optionText, idx) => {
+                const letter = String.fromCharCode(65 + idx);
+                const isSelected = currentSelected === letter;
+                return `
+                  <label class="mcq-option-item ${isSelected ? 'selected' : ''}">
+                    <div class="mcq-option-letter">${letter}</div>
+                    <input
+                      type="radio"
+                      name="q${qId}"
+                      value="${letter}"
+                      data-question-id="${qId}"
+                      ${isSelected ? 'checked' : ''}
+                    />
+                    <span class="mcq-option-text">${escapeHtml(optionText)}</span>
+                    <span class="mcq-check-bubble">${isSelected ? '✓' : ''}</span>
+                  </label>
+                `;
+              })
+              .join("")}
+          </div>
+        </div>
+
+        <div class="mcq-q-footer">
+          <button type="button" class="button-secondary btn-mcq-nav" id="btnPrevQ" ${mcqState.currentIndex === 0 ? 'disabled' : ''}>
+            ← Previous
+          </button>
+          <div class="mcq-footer-status">
+            ${currentSelected ? `<span class="mcq-saved-pill">✓ Saved (Option ${currentSelected})</span>` : '<span class="muted">Not answered yet</span>'}
+          </div>
+          <button type="button" class="btn-glow btn-mcq-nav" id="btnNextQ">
+            ${mcqState.currentIndex === total - 1 ? 'Save & Review' : 'Save & Next →'}
+          </button>
+        </div>
+      </section>
+
+      <!-- Right: Question Palette & Navigation Grid -->
+      <aside class="mcq-palette-panel">
+        <div class="palette-header">
+          <h3>Question Palette</h3>
+          <p class="muted">Quickly jump to any question</p>
+        </div>
+
+        <div class="palette-legend">
+          <div class="legend-item"><span class="legend-dot dot-answered"></span> Answered (${answeredCount})</div>
+          <div class="legend-item"><span class="legend-dot dot-unanswered"></span> Unanswered (${total - answeredCount})</div>
+          <div class="legend-item"><span class="legend-dot dot-review"></span> Marked (${mcqState.markedForReview.size})</div>
+        </div>
+
+        <div class="palette-grid">
+          ${mcqState.questions
+            .map((q, idx) => {
+              const isAns = Boolean(mcqState.answers[q.id]);
+              const isRev = mcqState.markedForReview.has(q.id);
+              const isCurr = idx === mcqState.currentIndex;
+              let stateClass = "unanswered";
+              if (isRev) stateClass = "review";
+              else if (isAns) stateClass = "answered";
+              if (isCurr) stateClass += " active-current";
+
+              return `
+                <button type="button" class="palette-btn ${stateClass}" data-goto-index="${idx}">
+                  ${idx + 1}
+                </button>
+              `;
+            })
+            .join("")}
+        </div>
+
+        <div class="palette-progress-wrap">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" style="width: ${Math.round((answeredCount / total) * 100)}%;"></div>
+          </div>
+          <span class="progress-text">${Math.round((answeredCount / total) * 100)}% Complete</span>
+        </div>
+
+        <div class="palette-footer-actions">
+          <button type="button" class="btn-glow" id="btnSubmitMcqSection" style="width:100%;padding:12px;">
+            🚀 Finalize Objective Section
+          </button>
+        </div>
+      </aside>
+    </div>
+  `;
+
+  // Attach Radio change events
+  holder.querySelectorAll("input[type='radio']").forEach((input) => {
+    input.addEventListener("change", async (e) => {
+      mcqState.answers[qId] = e.target.value;
+      await submitAnswer(e);
+      renderMcqWorkspace();
+    });
+  });
+
+  // Attach Palette Buttons
+  holder.querySelectorAll("[data-goto-index]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      mcqState.currentIndex = Number(btn.dataset.gotoIndex);
+      renderMcqWorkspace();
+    });
+  });
+
+  // Previous Button
+  holder.querySelector("#btnPrevQ")?.addEventListener("click", () => {
+    if (mcqState.currentIndex > 0) {
+      mcqState.currentIndex -= 1;
+      renderMcqWorkspace();
+    }
+  });
+
+  // Next / Save & Next Button
+  holder.querySelector("#btnNextQ")?.addEventListener("click", () => {
+    if (mcqState.currentIndex < total - 1) {
+      mcqState.currentIndex += 1;
+      renderMcqWorkspace();
+    } else {
+      showMcqSectionSummaryModal();
+    }
+  });
+
+  // Mark for Review
+  holder.querySelector("#btnMarkReview")?.addEventListener("click", () => {
+    if (mcqState.markedForReview.has(qId)) {
+      mcqState.markedForReview.delete(qId);
+    } else {
+      mcqState.markedForReview.add(qId);
+    }
+    renderMcqWorkspace();
+  });
+
+  // Clear Response
+  holder.querySelector("#btnClearResponse")?.addEventListener("click", () => {
+    delete mcqState.answers[qId];
+    renderMcqWorkspace();
+  });
+
+  // Submit Section
+  holder.querySelector("#btnSubmitMcqSection")?.addEventListener("click", () => {
+    showMcqSectionSummaryModal();
+  });
+}
+
+function showMcqSectionSummaryModal() {
+  const total = mcqState.questions.length;
+  const answered = Object.keys(mcqState.answers).length;
+  const unanswered = total - answered;
+  const marked = mcqState.markedForReview.size;
+
+  if (confirm(`Objective Exam Summary:\n\n• Total Questions: ${total}\n• Answered: ${answered}\n• Unanswered: ${unanswered}\n• Marked for Review: ${marked}\n\nDo you want to finalize your Objective Section?`)) {
+    setStatus("Objective exam responses submitted successfully!", "success");
+    const codingTab = qs('[data-switch-section="coding"]');
+    if (codingTab) {
+      codingTab.click();
+    }
+  }
+}
+
 async function loadQuestions() {
   const holder = qs("[data-question-list]");
   if (!holder) return;
@@ -355,50 +558,36 @@ async function loadQuestions() {
     return;
   }
 
-  const response = await apiFetch("/exam/questions", {
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Questions could not be loaded." }));
-    const message = errorMessageFromPayload(error, "Questions could not be loaded.");
-    setStatus(message, "warning");
-    if (response.status === 401 || response.status === 403) {
-      showExamAccessGate("Your exam access token is invalid or expired. Open a fresh invitation link.");
+  try {
+    const response = await apiFetch("/exam/questions", {
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Questions could not be loaded." }));
+      const message = errorMessageFromPayload(error, "Questions could not be loaded.");
+      setStatus(message, "warning");
+      if (response.status === 401 || response.status === 403) {
+        showExamAccessGate("Your exam access token is invalid or expired. Open a fresh invitation link.");
+      }
+      return;
     }
-    return;
+    const questions = await response.json();
+    mcqState.questions = questions || [];
+    if (mcqState.questions.length) {
+      renderMcqWorkspace();
+      const mcqContainer = qs("[data-mcq-workspace]");
+      if (mcqContainer) mcqContainer.hidden = false;
+    } else {
+      holder.innerHTML = `
+        <div class="card" style="text-align:center;padding:40px;">
+          <h3>No Objective Questions Available</h3>
+          <p class="muted">This exam is currently configured for programming problems.</p>
+        </div>
+      `;
+    }
+  } catch (err) {
+    setStatus("Failed to connect to exam server.", "warning");
   }
-  const questions = await response.json();
-
-  holder.innerHTML = questions
-    .map(
-      (question) => `
-        <article class="question-area">
-          <h2>${question.id}. ${escapeHtml(question.question)}</h2>
-          <div class="options">
-            ${question.options
-              .map(
-                (option, index) => `
-                  <label class="option">
-                    <input
-                      type="radio"
-                      name="q${question.id}"
-                      value="${String.fromCharCode(65 + index)}"
-                      data-question-id="${question.id}"
-                    />
-                    ${escapeHtml(option)}
-                  </label>
-                `
-              )
-              .join("")}
-          </div>
-        </article>
-      `
-    )
-    .join("");
-
-  holder.querySelectorAll("input[type='radio']").forEach((input) => {
-    input.addEventListener("change", submitAnswer);
-  });
 }
 
 async function submitAnswer(event) {
@@ -1567,6 +1756,79 @@ async function saveCodingProblem(event) {
   setStatus(`${adminProblemDrafts.length} coding question(s) saved.`, "success");
 }
 
+async function loadAdminMcqs() {
+  const holder = qs("#adminMcqList");
+  if (!holder) return;
+
+  try {
+    const response = await apiFetch("/exam/admin/questions", {
+      headers: authHeaders(),
+    });
+    if (!response.ok) return;
+    const questions = await response.json();
+    if (!questions.length) {
+      holder.innerHTML = `<p class="muted" style="padding:16px;">No objective questions added yet. Use the form above to add your first MCQ.</p>`;
+      return;
+    }
+    holder.innerHTML = questions
+      .map((q) => `
+        <article class="card" style="padding:16px;border-radius:10px;background:rgba(15,23,42,0.6);border:1px solid var(--line);">
+          <div style="display:flex;align-items:start;justify-content:space-between;gap:12px;">
+            <div style="flex:1;">
+              <strong style="color:#00f2fe;">Q${q.id}.</strong> <span style="font-weight:600;color:#f8fafc;">${escapeHtml(q.question)}</span>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:0.85rem;color:#cbd5e1;">
+                <div style="${q.correct_option === 'A' ? 'color:#00e676;font-weight:700;' : ''}"><strong>A:</strong> ${escapeHtml(q.option_a)} ${q.correct_option === 'A' ? '✅' : ''}</div>
+                <div style="${q.correct_option === 'B' ? 'color:#00e676;font-weight:700;' : ''}"><strong>B:</strong> ${escapeHtml(q.option_b)} ${q.correct_option === 'B' ? '✅' : ''}</div>
+                <div style="${q.correct_option === 'C' ? 'color:#00e676;font-weight:700;' : ''}"><strong>C:</strong> ${escapeHtml(q.option_c)} ${q.correct_option === 'C' ? '✅' : ''}</div>
+                <div style="${q.correct_option === 'D' ? 'color:#00e676;font-weight:700;' : ''}"><strong>D:</strong> ${escapeHtml(q.option_d)} ${q.correct_option === 'D' ? '✅' : ''}</div>
+              </div>
+            </div>
+            <button type="button" class="button-danger btn-sm" data-delete-mcq="${q.id}" style="padding:6px 12px;font-size:0.75rem;">Delete</button>
+          </div>
+        </article>
+      `)
+      .join("");
+
+    holder.querySelectorAll("[data-delete-mcq]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.deleteMcq;
+        if (confirm(`Delete MCQ Question ${id}?`)) {
+          await apiFetch(`/exam/admin/questions/${id}`, {
+            method: "DELETE",
+            headers: authHeaders(),
+          });
+          setStatus(`Question ${id} deleted.`, "success");
+          loadAdminMcqs();
+        }
+      });
+    });
+  } catch (err) {
+    console.warn("Failed to load admin MCQs", err);
+  }
+}
+
+async function handleCreateMcq(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const payload = {
+    question_text: form.question_text.value.trim(),
+    option_a: form.option_a.value.trim(),
+    option_b: form.option_b.value.trim(),
+    option_c: form.option_c.value.trim(),
+    option_d: form.option_d.value.trim(),
+    correct_option: form.correct_option.value.trim().toUpperCase(),
+  };
+
+  try {
+    await postJson("/exam/admin/questions", payload);
+    setStatus("MCQ Question added successfully!", "success");
+    form.reset();
+    loadAdminMcqs();
+  } catch (err) {
+    setStatus(err.message, "warning");
+  }
+}
+
 async function initializeAdminDashboard() {
   if (!qs("#adminLoginForm") && !qs("#adminDashboardContent")) return;
   const token = getToken();
@@ -1582,11 +1844,14 @@ async function initializeAdminDashboard() {
   if (loginCard) loginCard.style.display = "none";
   if (content) content.style.display = "block";
 
+  qs("#createMcqForm")?.addEventListener("submit", handleCreateMcq);
+
   await Promise.all([
     loadStudentsList(),
     loadContestSchedule(),
     loadCodingProblem(),
     loadExamHistory(),
+    loadAdminMcqs(),
   ]);
 }
 
@@ -1623,7 +1888,32 @@ window.ExamGuardInviteGate = {
   isActive: () => Boolean(getInviteTokenFromUrl() && qs("[data-invite-pin-gate]")) && !getToken(),
 };
 
+function wireSectionSwitcher() {
+  const btnMcq = qs('[data-switch-section="mcq"]');
+  const btnCoding = qs('[data-switch-section="coding"]');
+  const mcqWs = qs("[data-mcq-workspace]");
+  const codingWs = qs("[data-workspace]");
+
+  btnMcq?.addEventListener("click", () => {
+    btnMcq.classList.add("active");
+    btnCoding?.classList.remove("active");
+    if (mcqWs) mcqWs.hidden = false;
+    if (codingWs) codingWs.hidden = true;
+  });
+
+  btnCoding?.addEventListener("click", () => {
+    btnCoding?.classList.add("active");
+    btnMcq?.classList.remove("active");
+    if (mcqWs) mcqWs.hidden = true;
+    if (codingWs) {
+      codingWs.hidden = false;
+      window.dispatchEvent(new Event("resize"));
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  wireSectionSwitcher();
   const isAdminPage = window.location.pathname.includes('admin.html');
   const isExamPage = window.location.pathname.includes('exam.html');
   const isLoginPage = window.location.pathname.includes('login.html');

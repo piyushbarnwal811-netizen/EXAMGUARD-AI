@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Invigilator Cockpit (1:50 Matrix) | ExamGuard AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../css/style.css" />
+    <style>
+      :root {
+        --cockpit-bg: #070b14;
+        --card-bg: rgba(15, 23, 42, 0.95);
+        --border-subtle: rgba(51, 65, 85, 0.7);
+        --accent-cyan: #38bdf8;
+        --accent-emerald: #10b981;
+        --accent-amber: #f59e0b;
+        --accent-rose: #f43f5e;
+      }
+      body.cockpit-body {
+        background-color: var(--cockpit-bg);
+        color: #f1f5f9;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+      .cockpit-shell {
+        max-width: 1720px;
+        margin: 0 auto;
+        padding: 16px 24px 40px;
+      }
+      .cockpit-topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+        margin-bottom: 20px;
+      }
+      .cockpit-brand-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .cockpit-logo-badge {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.2));
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+      }
+      .cockpit-title-cluster h1 {
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin: 0;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .cockpit-title-cluster p {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin: 2px 0 0;
+      }
+      .matrix-chip {
+        font-size: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        color: var(--accent-cyan);
+        font-weight: 700;
+      }
+      .cockpit-meta-strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .cockpit-pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid var(--border-subtle);
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        color: #cbd5e1;
+      }
+      .cockpit-pill strong {
+        color: #fff;
+      }
+      .cockpit-pill.critical-pill {
+        background: rgba(244, 63, 94, 0.15);
+        border-color: rgba(244, 63, 94, 0.4);
+        color: #fda4af;
+        animation: pulseBorder 1.5s infinite;
+      }
+      .cockpit-pill.status-live {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: rgba(16, 185, 129, 0.4);
+        color: #6ee7b7;
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .cockpit-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 20px;
+        background: rgba(15, 23, 42, 0.6);
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border-subtle);
+      }
+      .cockpit-search-box {
+        position: relative;
+        flex: 1;
+        max-width: 400px;
+      }
+      .cockpit-search-box input {
+        width: 100%;
+        background: #090d16;
+        border: 1px solid rgba(71, 85, 105, 0.6);
+        border-radius: 8px;
+        padding: 8px 12px 8px 34px;
+        font-size: 0.8rem;
+        color: #fff;
+        outline: none;
+      }
+      .cockpit-search-box input:focus {
+        border-color: var(--accent-cyan);
+      }
+      .cockpit-search-icon {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 14px;
+        opacity: 0.6;
+      }
+      .filter-btn-group {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+      }
+      .filter-btn {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(71, 85, 105, 0.4);
+        color: #94a3b8;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+      .filter-btn.active {
+        background: var(--accent-cyan);
+        color: #070b14;
+        border-color: var(--accent-cyan);
+      }
+      .filter-btn.critical-filter.active {
+        background: var(--accent-rose);
+        color: #fff;
+        border-color: var(--accent-rose);
+      }
+      /* 1:50 Grid System */
+      .matrix-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 14px;
+      }
+      @media (min-width: 1440px) {
+        .matrix-grid {
+          grid-template-columns: repeat(5, 1fr);
+        }
+      }
+      @media (min-width: 1680px) {
+        .matrix-grid {
+          grid-template-columns: repeat(6, 1fr);
+        }
+      }
+      .candidate-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-subtle);
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        position: relative;
+      }
+      .candidate-card:hover {
+        border-color: rgba(148, 163, 184, 0.5);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+      /* Smart Prioritization Sort Highlighting */
+      .candidate-card.is-critical {
+        border-color: var(--accent-rose);
+        box-shadow: 0 0 20px rgba(244, 63, 94, 0.35);
+        animation: pulseBorder 1.8s infinite;
+      }
+      .candidate-card.is-frozen {
+        border-color: var(--accent-amber);
+        box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+      }
+      .candidate-card.is-terminated {
+        opacity: 0.35;
+        border-color: #450a0a;
+      }
+      @keyframes pulseBorder {
+        0%, 100% {
+          box-shadow: 0 0 10px rgba(244, 63, 94, 0.25);
+        }
+        50% {
+          box-shadow: 0 0 24px rgba(244, 63, 94, 0.55);
+        }
+      }
+      .card-header-meta {
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+        background: rgba(9, 13, 22, 0.6);
+      }
+      .card-header-left {
+        min-width: 0;
+      }
+      .card-roll {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #fff;
+        display: block;
+      }
+      .card-name {
+        font-size: 0.7rem;
+        color: #94a3b8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+      }
+      .score-pill {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .score-clean {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        color: #34d399;
+      }
+      .score-warn {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.4);
+        color: #fbbf24;
+      }
+      .score-critical {
+        background: rgba(244, 63, 94, 0.2);
+        border: 1px solid rgba(244, 63, 94, 0.5);
+        color: #f43f5e;
+      }
+      .thumbnail-viewport {
+        position: relative;
+        aspect-ratio: 4/3;
+        background: #020617;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .thumbnail-viewport img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .thumbnail-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #475569;
+        font-size: 0.7rem;
+        gap: 6px;
+      }
+      .placeholder-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(71, 85, 105, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+      .violation-ribbon {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        right: 6px;
+        background: rgba(225, 29, 72, 0.9);
+        color: #fff;
+        font-size: 0.65rem;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      }
+      .overlay-badge-frozen {
+        position: absolute;
+        inset: 0;
+        background: rgba(120, 53, 15, 0.85);
+        backdrop-filter: blur(2px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 10px;
+        color: #fef3c7;
+        z-index: 10;
+      }
+      .overlay-badge-terminated {
+        position: absolute;
+        inset: 0;
+        background: rgba(69, 10, 10, 0.9);
+        backdrop-filter: blur(2px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 10px;
+        color: #fee2e2;
+        z-index: 10;
+      }
+      .card-actions-strip {
+        padding: 8px;
+        background: rgba(9, 13, 22, 0.7);
+        border-top: 1px solid rgba(51, 65, 85, 0.5);
+        display: flex;
+        gap: 6px;
+      }
+      .btn-warn {
+        flex: 1;
+        background: rgba(14, 116, 144, 0.25);
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        color: #38bdf8;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+      }
+      .btn-warn:hover {
+        background: rgba(14, 116, 144, 0.5);
+      }
+      .btn-freeze {
+        background: rgba(217, 119, 6, 0.2);
+        border: 1px solid rgba(245, 158, 11, 0.4);
+        color: #fbbf24;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-unfreeze {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        color: #34d399;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-disqualify {
+        background: rgba(225, 29, 72, 0.2);
+        border: 1px solid rgba(244, 63, 94, 0.4);
+        color: #f43f5e;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      /* Modal Overlays */
+      .cockpit-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+      }
+      .cockpit-modal {
+        background: #0f172a;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        border-radius: 16px;
+        max-width: 500px;
+        width: 100%;
+        padding: 24px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+      }
+      .preset-chip {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(51, 65, 85, 0.6);
+        color: #cbd5e1;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        margin-bottom: 6px;
+        cursor: pointer;
+      }
+      .preset-chip:hover {
+        background: rgba(56, 189, 248, 0.15);
+        border-color: var(--accent-cyan);
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body class="cockpit-body">
+    <div class="cockpit-shell">
+      <!-- Cockpit Topbar -->
+      <header class="cockpit-topbar">
+        <div class="cockpit-brand-wrap">
+          <div class="cockpit-logo-badge">🛡️</div>
+          <div class="cockpit-title-cluster">
+            <h1>
+              Live Invigilator Cockpit
+              <span class="matrix-chip">1:50 MONITORING</span>
+            </h1>
+            <p>Smart Prioritization Grid &bull; Sub-second telemetry &amp; live interventions</p>
+          </div>
+        </div>
+
+        <div class="cockpit-meta-strip">
+          <div class="cockpit-pill">
+            <span>Candidates:</span>
+            <strong id="counterActive">0 / 50</strong>
+          </div>
+          <div class="cockpit-pill critical-pill" id="criticalPill" style="display:none;">
+            <span>⚠️ Critical:</span>
+            <strong id="counterCritical">0</strong>
+          </div>
+          <div class="cockpit-pill">
+            <span>Avg Trust:</span>
+            <strong id="counterAvgTrust">100%</strong>
+          </div>
+          <div class="cockpit-pill status-live" id="wsStatusBadge">
+            <span class="status-dot"></span>
+            <span id="wsStatusText">STREAM ACTIVE</span>
+          </div>
+          <a href="admin.html" class="button button-secondary btn-sm" style="margin-left: 8px;">
+            ← Admin Dashboard
+          </a>
+        </div>
+      </header>
+
+      <!-- Filter & Search Toolbar -->
+      <section class="cockpit-toolbar">
+        <div class="cockpit-search-box">
+          <span class="cockpit-search-icon">🔍</span>
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Search candidate by name, roll no, or violation..."
+          />
+        </div>
+
+        <div class="filter-btn-group">
+          <button type="button" class="filter-btn active" data-filter="ALL">All Candidates (<span id="countAll">0</span>)</button>
+          <button type="button" class="filter-btn critical-filter" data-filter="CRITICAL">⚠️ Critical Flagged (<span id="countCrit">0</span>)</button>
+          <button type="button" class="filter-btn" data-filter="WARNED">Suspicious (60-79%)</button>
+          <button type="button" class="filter-btn" data-filter="CLEAN">Clean (80-100%)</button>
+        </div>
+      </section>
+
+      <!-- 1:50 Matrix Grid Container -->
+      <main id="matrixGrid" class="matrix-grid"></main>
+    </div>
+
+    <!-- VOICE WARNING MODAL -->
+    <div id="voiceModal" class="cockpit-modal-backdrop" style="display:none;">
+      <div class="cockpit-modal">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:1.1rem;color:#fff;">🎙️ Send 1-Way Voice Warning</h3>
+          <button type="button" id="closeVoiceModal" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
+        </div>
+        <p class="muted" style="font-size:0.8rem;margin-bottom:14px;">
+          The warning will play aloud directly through <strong id="voiceCandidateName" style="color:#fff;">Roll-XX</strong>'s device speakers.
+        </p>
+
+        <div style="margin-bottom:14px;">
+          <span style="font-size:0.75rem;font-weight:700;color:#94a3b8;display:block;margin-bottom:6px;">QUICK SPOKEN PRESETS:</span>
+          <button type="button" class="preset-chip" data-preset="Please keep your eyes centered on the screen.">"Please keep your eyes centered on the screen."</button>
+          <button type="button" class="preset-chip" data-preset="Remove unauthorized headphones or earphones immediately.">"Remove unauthorized headphones immediately."</button>
+          <button type="button" class="preset-chip" data-preset="Face your camera directly. No looking away.">"Face your camera directly. No looking away."</button>
+          <button type="button" class="preset-chip" data-preset="Only one candidate is permitted in the exam frame.">"Only one candidate permitted in the frame."</button>
+          <button type="button" class="preset-chip" data-preset="Do not switch browser tabs or your exam will be terminated.">"Do not switch tabs or exam will terminate."</button>
+        </div>
+
+        <div style="margin-bottom:18px;">
+          <label style="font-size:0.75rem;font-weight:700;color:#94a3b8;display:block;margin-bottom:6px;">CUSTOM MESSAGE (TEXT-TO-SPEECH):</label>
+          <input type="text" id="customVoiceInput" placeholder="e.g. Roll 24, please put away your smartphone." style="width:100%;box-sizing:border-box;background:#090d16;border:1px solid #334155;border-radius:8px;padding:9px;color:#fff;font-size:0.8rem;" />
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button type="button" id="cancelVoiceBtn" class="button button-secondary btn-sm">Cancel</button>
+          <button type="button" id="sendVoiceBtn" class="btn-glow btn-sm" style="padding:8px 18px;">🔊 Transmit Warning Aloud</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- COCKPIT JAVASCRIPT LOGIC -->
+    <script>
+      (function () {
+        const query = new URLSearchParams(window.location.search);
+        const examId = query.get("examId") || query.get("id") || "exam_default";
+
+        // Seed candidates for testing / initial display
+        let candidates = [
+          { sessionId: "sess_01", rollNo: "CS-2026-004", name: "Aarav Sharma", trustScore: 42, latestViolation: "MULTIPLE_FACES", isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_02", rollNo: "CS-2026-012", name: "Beatriz Santos", trustScore: 55, latestViolation: "TAB_SWITCH", isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_03", rollNo: "CS-2026-027", name: "Chen Wei", trustScore: 98, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_04", rollNo: "CS-2026-031", name: "Devon Miller", trustScore: 84, latestViolation: "GAZE_ANOMALY", isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_05", rollNo: "CS-2026-045", name: "Elena Rostova", trustScore: 38, latestViolation: "SECONDARY_DISPLAY", isFrozen: true, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_06", rollNo: "CS-2026-052", name: "Farhan Siddiqui", trustScore: 95, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_07", rollNo: "CS-2026-068", name: "Grace Hopper Jr.", trustScore: 100, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
+          { sessionId: "sess_08", rollNo: "CS-2026-074", name: "Hassan Al-Mansoor", trustScore: 68, latestViolation: "VOICE_ACTIVITY", isFrozen: false, isTerminated: false, thumbnailBase64: null },
+        ];
+
+        let ws = null;
+        let activeFilter = "ALL";
+        let searchQuery = "";
+        let selectedCandidateForVoice = null;
+
+        const grid = document.getElementById("matrixGrid");
+        const countActiveEl = document.getElementById("counterActive");
+        const countCritEl = document.getElementById("counterCritical");
+        const critPill = document.getElementById("criticalPill");
+        const countAvgTrustEl = document.getElementById("counterAvgTrust");
+        const countAllEl = document.getElementById("countAll");
+        const countCritFilterEl = document.getElementById("countCrit");
+        const wsStatusBadge = document.getElementById("wsStatusBadge");
+        const wsStatusText = document.getElementById("wsStatusText");
+
+        // Voice Modal Elements
+        const voiceModal = document.getElementById("voiceModal");
+        const voiceCandidateName = document.getElementById("voiceCandidateName");
+        const customVoiceInput = document.getElementById("customVoiceInput");
+        const closeVoiceModal = document.getElementById("closeVoiceModal");
+        const cancelVoiceBtn = document.getElementById("cancelVoiceBtn");
+        const sendVoiceBtn = document.getElementById("sendVoiceBtn");
+
+        // Render Matrix Cards with Smart Prioritization Sort
+        function renderMatrix() {
+          let list = [...candidates];
+
+          // Filter
+          if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            list = list.filter(c =>
+              c.name.toLowerCase().includes(q) ||
+              c.rollNo.toLowerCase().includes(q) ||
+              (c.latestViolation && c.latestViolation.toLowerCase().includes(q))
+            );
+          }
+
+          if (activeFilter === "CRITICAL") {
+            list = list.filter(c => c.trustScore < 60 || c.latestViolation);
+          } else if (activeFilter === "WARNED") {
+            list = list.filter(c => c.trustScore >= 60 && c.trustScore < 80);
+          } else if (activeFilter === "CLEAN") {
+            list = list.filter(c => c.trustScore >= 80 && !c.latestViolation);
+          }
+
+          // Smart Prioritization Sort: Low trust (<60) or violations bubble to top-left
+          list.sort((a, b) => {
+            if (a.isTerminated !== b.isTerminated) return a.isTerminated ? 1 : -1;
+            const aUrgent = (a.trustScore < 60 || a.latestViolation) ? 1 : 0;
+            const bUrgent = (b.trustScore < 60 || b.latestViolation) ? 1 : 0;
+            if (bUrgent !== aUrgent) return bUrgent - aUrgent;
+            return a.trustScore - b.trustScore;
+          });
+
+          // Metrics
+          const criticalTotal = candidates.filter(c => c.trustScore < 60 || c.latestViolation).length;
+          countActiveEl.textContent = `${candidates.filter(c => !c.isTerminated).length} / 50`;
+          countCritEl.textContent = criticalTotal;
+          countCritFilterEl.textContent = criticalTotal;
+          countAllEl.textContent = candidates.length;
+          if (criticalTotal > 0) {
+            critPill.style.display = "flex";
+          } else {
+            critPill.style.display = "none";
+          }
+
+          const avgScore = candidates.length
+            ? Math.round(candidates.reduce((sum, c) => sum + c.trustScore, 0) / candidates.length)
+            : 100;
+          countAvgTrustEl.textContent = `${avgScore}%`;
+
+          // Generate HTML
+          grid.innerHTML = list.map(c => {
+            const isCrit = (c.trustScore < 60 || c.latestViolation) && !c.isTerminated && !c.isFrozen;
+            const scoreClass = c.trustScore >= 80 ? "score-clean" : c.trustScore >= 60 ? "score-warn" : "score-critical";
+            
+            return `
+              <div class="candidate-card ${isCrit ? "is-critical" : ""} ${c.isFrozen ? "is-frozen" : ""} ${c.isTerminated ? "is-terminated" : ""}" data-session="${c.sessionId}">
+                <div class="card-header-meta">
+                  <div class="card-header-left">
+                    <span class="card-roll">${c.rollNo}</span>
+                    <span class="card-name">${c.name}</span>
+                  </div>
+                  <div class="score-pill ${scoreClass}">
+                    <span>🛡️</span>
+                    <span>${c.trustScore}%</span>
+                  </div>
+                </div>
+
+                <div class="thumbnail-viewport">
+                  ${c.thumbnailBase64
+                    ? `<img src="${c.thumbnailBase64}" alt="${c.name}" />`
+                    : `<div class="thumbnail-placeholder">
+                         <div class="placeholder-avatar">${c.name.split(' ').map(p => p[0]).slice(0, 2).join('')}</div>
+                         <span>POLLING (4.5s)</span>
+                       </div>`
+                  }
+
+                  ${c.latestViolation && !c.isFrozen && !c.isTerminated ? `
+                    <div class="violation-ribbon" title="${c.latestViolation}">
+                      ⚠️ ${c.latestViolation}
+                    </div>
+                  ` : ''}
+
+                  ${c.isFrozen && !c.isTerminated ? `
+                    <div class="overlay-badge-frozen">
+                      <span style="font-size:24px;">⏸️</span>
+                      <strong style="font-size:0.75rem;margin-top:4px;">SESSION FROZEN</strong>
+                      <span style="font-size:0.65rem;opacity:0.8;">Verification in progress</span>
+                    </div>
+                  ` : ''}
+
+                  ${c.isTerminated ? `
+                    <div class="overlay-badge-terminated">
+                      <span style="font-size:24px;">⛔</span>
+                      <strong style="font-size:0.75rem;margin-top:4px;">DISQUALIFIED</strong>
+                    </div>
+                  ` : ''}
+                </div>
+
+                <div class="card-actions-strip">
+                  <button type="button" class="btn-warn" data-action="warn" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                    🎙️ Warn
+                  </button>
+                  <button type="button" class="${c.isFrozen ? "btn-unfreeze" : "btn-freeze"}" data-action="freeze" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                    ${c.isFrozen ? "▶️ Resume" : "⏸️ Freeze"}
+                  </button>
+                  <button type="button" class="btn-disqualify" data-action="disqualify" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                    ⏹️ Lock
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
+
+        // Delegate Card Actions
+        grid.addEventListener("click", function (e) {
+          const btn = e.target.closest("button[data-action]");
+          if (!btn) return;
+          const action = btn.dataset.action;
+          const sId = btn.dataset.session;
+          const candidate = candidates.find(c => c.sessionId === sId);
+          if (!candidate) return;
+
+          if (action === "warn") {
+            selectedCandidateForVoice = candidate;
+            voiceCandidateName.textContent = `${candidate.name} (${candidate.rollNo})`;
+            customVoiceInput.value = "";
+            voiceModal.style.display = "flex";
+          } else if (action === "freeze") {
+            const nextFreeze = !candidate.isFrozen;
+            candidate.isFrozen = nextFreeze;
+            sendWsMessage({
+              type: "TOGGLE_SESSION_FREEZE",
+              sessionId: candidate.sessionId,
+              isFrozen: nextFreeze,
+              reason: nextFreeze ? "Integrity check in progress" : ""
+            });
+            renderMatrix();
+          } else if (action === "disqualify") {
+            if (confirm(`Are you sure you want to DISQUALIFY and terminate ${candidate.name} (${candidate.rollNo})?`)) {
+              candidate.isTerminated = true;
+              sendWsMessage({
+                type: "FORCE_TERMINATE",
+                sessionId: candidate.sessionId,
+                reason: "Disqualified by invigilator for testing irregularities."
+              });
+              renderMatrix();
+            }
+          }
+        });
+
+        // Preset Chips
+        document.querySelectorAll(".preset-chip").forEach(chip => {
+          chip.addEventListener("click", () => {
+            customVoiceInput.value = chip.dataset.preset;
+          });
+        });
+
+        // Close Voice Modal
+        closeVoiceModal.addEventListener("click", () => { voiceModal.style.display = "none"; });
+        cancelVoiceBtn.addEventListener("click", () => { voiceModal.style.display = "none"; });
+
+        // Dispatch Voice Warning
+        sendVoiceBtn.addEventListener("click", () => {
+          if (!selectedCandidateForVoice) return;
+          const msg = customVoiceInput.value.trim() || "Keep your eyes on the screen.";
+          sendWsMessage({
+            type: "TRIGGER_AUDIO_ALERT",
+            sessionId: selectedCandidateForVoice.sessionId,
+            message: msg
+          });
+          voiceModal.style.display = "none";
+        });
+
+        // Search Input
+        document.getElementById("searchInput").addEventListener("input", function (e) {
+          searchQuery = e.target.value;
+          renderMatrix();
+        });
+
+        // Filter Buttons
+        document.querySelectorAll(".filter-btn").forEach(btn => {
+          btn.addEventListener("click", function () {
+            document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            activeFilter = btn.dataset.filter;
+            renderMatrix();
+          });
+        });
+
+        // Send WS Payload
+        function sendWsMessage(payload) {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+          } else {
+            // REST Fallback
+            fetch(`/api/v1/invigilator/${encodeURIComponent(examId)}/intervene`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: payload.type === "TRIGGER_AUDIO_ALERT" ? "WARN" : payload.type === "TOGGLE_SESSION_FREEZE" ? "FREEZE" : "TERMINATE",
+                sessionId: payload.sessionId,
+                message: payload.message,
+                reason: payload.reason
+              })
+            }).catch(console.warn);
+          }
+        }
+
+        // Connect WebSocket
+        function connectWs() {
+          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+          const wsUrl = `${protocol}//${window.location.host}/api/ws/invigilator/${encodeURIComponent(examId)}?role=invigilator`;
+
+          try {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function () {
+              wsStatusBadge.className = "cockpit-pill status-live";
+              wsStatusText.textContent = "STREAM ACTIVE";
+            };
+
+            ws.onmessage = function (event) {
+              try {
+                const data = JSON.parse(event.data);
+                if (data.type === "INITIAL_MATRIX_STATE" && data.candidates && data.candidates.length) {
+                  const map = new Map(candidates.map(c => [c.sessionId, c]));
+                  data.candidates.forEach(c => map.set(c.sessionId, c));
+                  candidates = Array.from(map.values());
+                  renderMatrix();
+                } else if (data.type === "CANDIDATE_HEARTBEAT" && data.candidate) {
+                  const cand = data.candidate;
+                  const idx = candidates.findIndex(c => c.sessionId === cand.sessionId);
+                  if (idx >= 0) {
+                    candidates[idx] = Object.assign(candidates[idx], cand);
+                  } else {
+                    candidates.unshift(cand);
+                  }
+                  renderMatrix();
+                } else if (data.type === "CANDIDATE_FREEZE_UPDATED") {
+                  const cand = candidates.find(c => c.sessionId === data.sessionId);
+                  if (cand) {
+                    cand.isFrozen = data.isFrozen;
+                    renderMatrix();
+                  }
+                } else if (data.type === "CANDIDATE_TERMINATED") {
+                  const cand = candidates.find(c => c.sessionId === data.sessionId);
+                  if (cand) {
+                    cand.isTerminated = true;
+                    renderMatrix();
+                  }
+                }
+              } catch (e) {
+                console.warn("WS Parse Error:", e);
+              }
+            };
+
+            ws.onclose = function () {
+              wsStatusBadge.className = "cockpit-pill";
+              wsStatusBadge.style.color = "#f43f5e";
+              wsStatusText.textContent = "RECONNECTING...";
+              setTimeout(connectWs, 3000);
+            };
+
+            ws.onerror = function () {
+              ws.close();
+            };
+          } catch (e) {
+            console.warn("Connection error", e);
+          }
+        }
+
+        renderMatrix();
+        connectWs();
+      })();
+    </script>
+  </body>
+</html>
+

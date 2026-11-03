@@ -1,0 +1,367 @@
+// ExamGuard AI - Enterprise Architecture Prisma Schema
+// Target Database: PostgreSQL
+// Hybrid Client-Heavy / Server-Side Light AI Proctoring SaaS Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  EXAMINER
+  CANDIDATE
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum SensitivityLevel {
+  LOW
+  MEDIUM
+  STRICT
+}
+
+enum QuestionType {
+  MCQ
+  MULTIPLE_SELECT
+  SUBJECTIVE
+  CODING
+}
+
+enum SessionStatus {
+  REGISTERED
+  PRECHECK_COMPLETED
+  IN_PROGRESS
+  SUBMITTED
+  TERMINATED_BY_SYSTEM
+  DISQUALIFIED
+}
+
+enum ViolationType {
+  MULTIPLE_FACES
+  CANDIDATE_ABSENT
+  FACE_MISSING
+  GAZE_ANOMALY
+  LOOKING_AWAY
+  PROHIBITED_OBJECT
+  OBJECT_DETECTED
+  SPEECH_DETECTED
+  ACOUSTIC_ACTIVITY
+  TAB_SWITCH
+  WINDOW_BLUR
+  FULLSCREEN_EXIT
+  DUAL_MONITOR_DETECTED
+  CLIPBOARD_VIOLATION
+  UNAUTHORIZED_KEY
+  DEVTOOLS_OPENED
+}
+
+enum ReviewStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+enum SubmissionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  EVALUATED
+}
+
+// ---------------------------------------------------------------------------
+// CORE USER & AUTHENTICATION
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String      @id @default(uuid()) @db.Uuid
+  email           String      @unique @db.VarChar(255)
+  passwordHash    String      @map("password_hash") @db.VarChar(255)
+  fullName        String      @map("full_name") @db.VarChar(120)
+  role            UserRole    @default(CANDIDATE)
+  institution     String?     @db.VarChar(180)
+  department      String?     @db.VarChar(120)
+  avatarUrl       String?     @map("avatar_url") @db.VarChar(500)
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  examsCreated          Exam[]              @relation("ExamCreator")
+  candidateSessions     CandidateSession[]  @relation("CandidateSessions")
+  reviewedViolations    ViolationLog[]      @relation("ExaminerReviewedViolations")
+  auditLogs             AuditLog[]          @relation("UserAuditLogs")
+
+  @@map("users")
+  @@index([email])
+  @@index([role])
+}
+
+// ---------------------------------------------------------------------------
+// EXAM MANAGEMENT & SECURITY CONFIGURATION
+// ---------------------------------------------------------------------------
+
+model Exam {
+  id                    String            @id @default(uuid()) @db.Uuid
+  code                  String            @unique @db.VarChar(64) // e.g. "CS101-FINALS-2026"
+  title                 String            @db.VarChar(255)
+  description           String?           @db.Text
+  instructions          String?           @db.Text
+  durationMinutes       Int               @default(60) @map("duration_minutes")
+  passingScore          Float             @default(50.0) @map("passing_score")
+  status                ExamStatus        @default(DRAFT)
+  startsAt              DateTime          @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime          @map("ends_at") @db.Timestamptz(6)
+  
+  // Guardrail Configuration & Penalty Weights
+  sensitivity           SensitivityLevel  @default(MEDIUM)
+  
+  // Custom JSON Penalty Weights map:
+  // e.g. { "TAB_SWITCH": 10, "MULTIPLE_FACES": 20, "CANDIDATE_ABSENT": 15, "GAZE_ANOMALY": 5, "PROHIBITED_OBJECT": 25, "SPEECH_DETECTED": 10, "FULLSCREEN_EXIT": 15 }
+  penaltyWeights        Json              @default("{\"TAB_SWITCH\":10,\"MULTIPLE_FACES\":20,\"CANDIDATE_ABSENT\":15,\"GAZE_ANOMALY\":5,\"PROHIBITED_OBJECT\":25,\"SPEECH_DETECTED\":10,\"FULLSCREEN_EXIT\":15,\"CLIPBOARD_VIOLATION\":10,\"DUAL_MONITOR_DETECTED\":20}") @map("penalty_weights")
+  
+  maxUnapprovedExits    Int               @default(3) @map("max_unapproved_exits")
+  criticalTrustScore    Float             @default(30.0) @map("critical_trust_score") // Auto-terminate if score drops below
+  
+  // Feature Toggles
+  enableAudioMonitoring Boolean           @default(true) @map("enable_audio_monitoring")
+  enableObjectDetection Boolean           @default(true) @map("enable_object_detection")
+  enableGazeTracking    Boolean           @default(true) @map("enable_gaze_tracking")
+  enableCodeEditor      Boolean           @default(false) @map("enable_code_editor")
+
+  createdById           String            @map("created_by_id") @db.Uuid
+  createdBy             User              @relation("ExamCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  questions             Question[]
+  candidateSessions     CandidateSession[]
+  submissions           Submission[]
+  violationLogs         ViolationLog[]
+
+  @@map("exams")
+  @@index([code])
+  @@index([status])
+  @@index([startsAt, endsAt])
+}
+
+// ---------------------------------------------------------------------------
+// ASSESSMENT QUESTIONS
+// ---------------------------------------------------------------------------
+
+model Question {
+  id              String        @id @default(uuid()) @db.Uuid
+  examId          String        @map("exam_id") @db.Uuid
+  exam            Exam          @relation(fields: [examId], references: [id], onDelete: Cascade)
+  orderIndex      Int           @default(0) @map("order_index")
+  type            QuestionType  @default(MCQ)
+  title           String        @db.VarChar(255)
+  prompt          String        @db.Text
+  points          Float         @default(1.0)
+  negativePoints  Float         @default(0.0) @map("negative_points")
+  
+  // MCQ Options: [{"id": "A", "text": "Option A"}, {"id": "B", "text": "Option B"}]
+  options         Json?
+  correctAnswers  Json?         @map("correct_answers") // ["A"] or ["A", "C"]
+  
+  // Subjective / Coding Questions
+  starterCode     String?       @map("starter_code") @db.Text
+  codeLanguage    String?       @map("code_language") @db.VarChar(50)
+  testCases       Json?         @map("test_cases") // [{"input": "5", "output": "25", "isHidden": false}]
+  solutionCode    String?       @map("solution_code") @db.Text
+  rubric          String?       @db.Text
+
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  answers         Answer[]
+
+  @@map("questions")
+  @@index([examId, orderIndex])
+}
+
+// ---------------------------------------------------------------------------
+// CANDIDATE PROCTORING SESSIONS & TRUST SCORE
+// ---------------------------------------------------------------------------
+
+model CandidateSession {
+  id                  String          @id @default(uuid()) @db.Uuid
+  examId              String          @map("exam_id") @db.Uuid
+  exam                Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  candidateId         String          @map("candidate_id") @db.Uuid
+  candidate           User            @relation("CandidateSessions", fields: [candidateId], references: [id], onDelete: Cascade)
+  
+  sessionToken        String          @unique @map("session_token") @db.VarChar(255)
+  status              SessionStatus   @default(REGISTERED)
+  
+  // Real-time Integrity Score (0 - 100%)
+  trustScore          Float           @default(100.0) @map("trust_score")
+  fullscreenExitCount Int             @default(0) @map("fullscreen_exit_count")
+  
+  // Baseline Face Calibration Data
+  // e.g. { "baselineYaw": 0.02, "baselinePitch": -0.05, "irisRatio": 0.48, "ambientLighting": 82 }
+  baselineCalibration Json?           @map("baseline_calibration")
+  
+  // Running summary counters: { "TAB_SWITCH": 2, "GAZE_ANOMALY": 1, ... }
+  violationSummary    Json            @default("{}") @map("violation_summary")
+  
+  // Environment & Hardware Audit Info
+  ipAddress           String?         @map("ip_address") @db.VarChar(45)
+  userAgent           String?         @map("user_agent") @db.Text
+  screenResolution    String?         @map("screen_resolution") @db.VarChar(30) // e.g. "1920x1080"
+  hasMultipleDisplays Boolean         @default(false) @map("has_multiple_displays")
+  terminationReason   String?         @map("termination_reason") @db.VarChar(255)
+  
+  startedAt           DateTime?       @map("started_at") @db.Timestamptz(6)
+  endedAt             DateTime?       @map("ended_at") @db.Timestamptz(6)
+  submittedAt         DateTime?       @map("submitted_at") @db.Timestamptz(6)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  violationLogs       ViolationLog[]
+  submission          Submission?
+
+  @@map("candidate_sessions")
+  @@unique([examId, candidateId])
+  @@index([candidateId])
+  @@index([examId, status])
+  @@index([trustScore])
+  @@index([sessionToken])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT EVIDENCE & VIOLATION LOGS (SERVER-SIDE LIGHTWEIGHT STORAGE)
+// ---------------------------------------------------------------------------
+
+model ViolationLog {
+  id              String            @id @default(uuid()) @db.Uuid
+  sessionId       String            @map("session_id") @db.Uuid
+  session         CandidateSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  candidateId     String            @map("candidate_id") @db.Uuid
+  examId          String            @map("exam_id") @db.Uuid
+  exam            Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  
+  violationType   ViolationType     @map("violation_type")
+  confidence      Float             @default(1.0) // 0.00 to 1.00
+  
+  // Compressed Event-Triggered Evidence Snapshot (Base64 WebP, strictly <= 50KB or CDN URL)
+  snapshot        String?           @db.Text
+  
+  // Resulting Trust Score after penalty subtraction
+  currentScore    Float             @map("current_score")
+  penaltyApplied  Float             @default(0.0) @map("penalty_applied")
+  
+  // Detailed Sensor & Landmark Metadata
+  // e.g. { "yaw": 34.2, "pitch": -22.5, "durationSeconds": 3.4, "objectClass": "cell phone", "decibels": 64.2 }
+  metadata        Json?
+  
+  timestamp       DateTime          @default(now()) @db.Timestamptz(6)
+  
+  // Examiner Verification Workflow
+  reviewStatus    ReviewStatus      @default(PENDING) @map("review_status")
+  examinerNotes   String?           @map("examiner_notes") @db.Text
+  reviewedById    String?           @map("reviewed_by_id") @db.Uuid
+  reviewedBy      User?             @relation("ExaminerReviewedViolations", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?         @map("reviewed_at") @db.Timestamptz(6)
+
+  @@map("violation_logs")
+  @@index([sessionId, timestamp])
+  @@index([candidateId, examId])
+  @@index([violationType])
+  @@index([reviewStatus])
+  @@index([currentScore])
+}
+
+// ---------------------------------------------------------------------------
+// SUBMISSIONS & ANSWERS
+// ---------------------------------------------------------------------------
+
+model Submission {
+  id                    String            @id @default(uuid()) @db.Uuid
+  sessionId             String            @unique @map("session_id") @db.Uuid
+  session               CandidateSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  candidateId           String            @map("candidate_id") @db.Uuid
+  examId                String            @map("exam_id") @db.Uuid
+  exam                  Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  
+  status                SubmissionStatus  @default(SUBMITTED)
+  autoSubmitted         Boolean           @default(false) @map("auto_submitted")
+  autoSubmitReason      String?           @map("auto_submit_reason") @db.VarChar(255)
+  
+  totalScore            Float             @default(0.0) @map("total_score")
+  maxScore              Float             @default(0.0) @map("max_score")
+  finalTrustScore       Float             @default(100.0) @map("final_trust_score")
+  
+  startedAt             DateTime          @map("started_at") @db.Timestamptz(6)
+  submittedAt           DateTime          @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  evaluatedAt           DateTime?         @map("evaluated_at") @db.Timestamptz(6)
+
+  // Relations
+  answers               Answer[]
+
+  @@map("submissions")
+  @@index([examId, candidateId])
+  @@index([status])
+}
+
+model Answer {
+  id              String        @id @default(uuid()) @db.Uuid
+  submissionId    String        @map("submission_id") @db.Uuid
+  submission      Submission    @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  questionId      String        @map("question_id") @db.Uuid
+  question        Question      @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  
+  selectedOptions Json?         @map("selected_options") // ["A"]
+  subjectiveText  String?       @map("subjective_text") @db.Text
+  codeSubmitted   String?       @map("code_submitted") @db.Text
+  codeLanguage    String?       @map("code_language") @db.VarChar(50)
+  
+  passedTestCases Int           @default(0) @map("passed_test_cases")
+  totalTestCases  Int           @default(0) @map("total_test_cases")
+  scoreEarned     Float         @default(0.0) @map("score_earned")
+  feedback        String?       @db.Text
+  
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("answers")
+  @@unique([submissionId, questionId])
+  @@index([questionId])
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT TRAILS & SYSTEM EVENTS
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  user        User?     @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  action      String    @db.VarChar(100)
+  ipAddress   String?   @map("ip_address") @db.VarChar(45)
+  details     Json?
+  timestamp   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("audit_logs")
+  @@index([action, timestamp])
+  @@index([userId])
+}
+

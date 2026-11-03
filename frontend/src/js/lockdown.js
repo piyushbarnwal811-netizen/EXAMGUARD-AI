@@ -92,6 +92,7 @@ function shouldSkipDuplicate(eventType, details) {
 function notifySecurityEvent(eventType, message = "", details = {}, options = {}) {
   const eventDetails = lockdownContext(details);
   if (shouldSkipDuplicate(eventType, eventDetails)) return;
+  window.ExamGuardInvigilatorClient?.setViolation?.(eventType, eventDetails);
 
   if (window.ExamGuardTracking?.sendEvent) {
     window.ExamGuardTracking.sendEvent(

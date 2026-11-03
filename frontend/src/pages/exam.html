@@ -4,169 +4,336 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Proctored Assessment | ExamGuard AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="../css/style.css" />
   </head>
-  <body>
-    <!-- Modern SEB Gate Overlay -->
-    <div id="sebGate" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(5,9,18,0.92);align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(24px);">
-      <div class="seb-gate-modern">
-        <div class="hero-shield-badge">🔒 Secure Environment Verification</div>
-        <h1 style="font-size:2rem;margin:12px 0 8px;background:linear-gradient(135deg,#fff 0%,#00f2fe 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Safe Exam Browser Required</h1>
-        <p class="muted" id="gateMsg" style="max-width:540px;margin:0 auto 24px;line-height:1.5;">This proctored assessment requires a secured lockdown browser to ensure test integrity.</p>
-        
-        <div style="display:flex;flex-direction:column;gap:12px;max-width:440px;margin:0 auto;">
-          <button id="gateLaunchSEB" type="button" class="btn-glow" style="padding:14px 20px;font-size:1rem;">
-            🚀 Open Exam in Safe Browser
-          </button>
-          <a id="gateDownloadSeb" href="#" class="button button-secondary" style="padding:12px 20px;text-align:center;">
-            ⬇️ Download SEB Config (.seb)
-          </a>
-          <a id="gateDownloadExe" href="#" class="button button-secondary" style="padding:12px 20px;text-align:center;">
-            💻 Download Safe Browser (.exe)
-          </a>
-          <p class="muted" style="font-size:12px;margin-top:8px;">
-            After downloading, double-click the <code>.seb</code> file to automatically launch your verified test session.
-          </p>
-          <button id="gateContinue" type="button" style="opacity:0.65;font-size:12px;background:transparent;border:none;color:#94a3b8;cursor:pointer;text-decoration:underline;margin-top:4px;">
-            Continue in Standard Browser Mode (Proctoring &amp; Lockdown Enforced)
-          </button>
+  <body class="exam-body-layout">
+    <!-- Floating Proctor Alert Banner (Dynamic HUD Alert) -->
+    <div id="proctorAlertToast" class="proctor-hud-alert" hidden>
+      <div class="hud-alert-content">
+        <span class="hud-alert-icon">⚠️</span>
+        <div class="hud-alert-text">
+          <strong id="hudAlertTitle">Integrity Notice</strong>
+          <span id="hudAlertDesc">Please keep your eyes centered on the screen.</span>
         </div>
-        <p class="muted" id="gateTokenInfo" style="margin-top:20px;font-size:11px;font-family:monospace;letter-spacing:0.5px;"></p>
       </div>
     </div>
 
-    <!-- Exam Topbar -->
-    <header class="shell topbar contest-topbar">
-      <div>
-        <div class="brand">ExamGuard AI</div>
-        <p class="muted" data-contest-status>Syncing exam security matrix...</p>
+    <!-- Modern SEB Gate Overlay -->
+    <div id="sebGate" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(5,9,18,0.94);align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(28px);">
+      <div class="seb-gate-modern">
+        <div class="hero-shield-badge">🔒 Secure Environment Verification</div>
+        <h1 class="gradient-title">Safe Exam Browser Required</h1>
+        <p class="muted" id="gateMsg" style="max-width:540px;margin:0 auto 24px;line-height:1.6;font-size:0.95rem;">
+          This proctored assessment requires a secured lockdown browser to guarantee institutional academic integrity.
+        </p>
+        
+        <div class="seb-action-stack">
+          <button id="gateLaunchSEB" type="button" class="btn-glow" style="padding:15px 24px;font-size:1rem;width:100%;">
+            🚀 Open Exam in Safe Exam Browser
+          </button>
+          <div class="seb-btn-grid">
+            <a id="gateDownloadSeb" href="#" class="button button-secondary" style="padding:12px 18px;text-align:center;">
+              ⬇️ Config (.seb)
+            </a>
+            <a id="gateDownloadExe" href="#" class="button button-secondary" style="padding:12px 18px;text-align:center;">
+              💻 Safe Browser (.exe)
+            </a>
+          </div>
+          <p class="muted" style="font-size:12px;margin:8px 0 0;line-height:1.4;">
+            After downloading, double-click the <code>.seb</code> configuration file to launch your authenticated proctored session automatically.
+          </p>
+          <button id="gateContinue" type="button" class="link-subtle-bypass">
+            Continue in Standard Browser Mode (Proctoring &amp; Lockdown Enforced)
+          </button>
+        </div>
+        <p class="muted" id="gateTokenInfo" style="margin-top:24px;font-size:11px;font-family:'JetBrains Mono',monospace;letter-spacing:0.5px;opacity:0.75;"></p>
+      </div>
+    </div>
+
+    <!-- Exam Topbar (High-Focus Proctor HUD) -->
+    <header class="shell topbar contest-topbar exam-proctor-header">
+      <div class="brand-security-cluster">
+        <div class="brand-shield-wrap">
+          <div class="cyber-shield-glow"></div>
+          <div class="brand">ExamGuard AI</div>
+        </div>
+        <div class="session-status-meta">
+          <span class="pulse-indicator-pill"><span class="pulse-dot"></span> PROCTORED ACTIVE</span>
+          <p class="muted status-message" data-contest-status>Syncing security matrix...</p>
+        </div>
+        
+        <!-- Live Security Matrix Pills -->
         <div class="security-strip" aria-label="Exam security status">
-          <span class="status-pill" data-lockdown-indicator><span class="status-dot"></span><span data-lockdown-status>Fullscreen inactive</span></span>
-          <span class="status-pill" data-camera-indicator><span class="status-dot"></span><span data-camera-status>Camera not started</span></span>
-          <span class="status-pill"><span class="status-dot"></span><span data-ip-status>Checking IP...</span></span>
-          <span class="status-pill" data-location-indicator><span class="status-dot"></span><span data-location-status>Location not shared</span></span>
+          <span class="status-pill status-pill-lockdown" data-lockdown-indicator>
+            <span class="status-dot"></span>
+            <span data-lockdown-status>Fullscreen inactive</span>
+          </span>
+          <span class="status-pill status-pill-camera" data-camera-indicator>
+            <span class="status-dot"></span>
+            <span data-camera-status>Camera not started</span>
+          </span>
+          <span class="status-pill status-pill-ip">
+            <span class="status-dot"></span>
+            <span data-ip-status>Checking IP...</span>
+          </span>
+          <span class="status-pill status-pill-location" data-location-indicator>
+            <span class="status-dot"></span>
+            <span data-location-status>Location not shared</span>
+          </span>
         </div>
       </div>
-      <nav class="nav">
-        <button type="button" data-lockdown-start>Enter Fullscreen</button>
-        <button type="button" data-camera-start>Start Camera</button>
-        <button type="button" class="button-secondary" data-camera-stop disabled>Stop Camera</button>
-        <button type="button" data-location-send>Send Location</button>
-        <button type="button" id="downloadSafeBrowser" class="button-secondary">SEB Installer</button>
-        <button type="button" id="launchSEB" class="button-secondary">Launch SEB</button>
+
+      <!-- Header Center / Right Timer & Actions -->
+      <nav class="nav exam-topbar-controls">
+        <div class="exam-header-timer" title="Contest Time Remaining">
+          <span class="timer-icon">⏳</span>
+          <span class="timer-display" data-contest-clock>--:--:--</span>
+        </div>
+
+        <button type="button" class="btn-fullscreen-toggle" data-lockdown-start title="Toggle Fullscreen Mode">
+          <span class="btn-icon">⛶</span>
+          <span>Fullscreen</span>
+        </button>
+
+        <!-- Hidden / Programmatic Controls required by scripts & tests -->
+        <button type="button" data-camera-start class="btn-utility-cam" title="Start Camera">Camera</button>
+        <button type="button" class="button-secondary btn-utility-cam-stop" data-camera-stop disabled title="Stop Camera" style="display:none;">Stop</button>
+        <button type="button" data-location-send class="btn-utility-loc" title="Send Location" style="display:none;">Location</button>
+        <button type="button" id="downloadSafeBrowser" class="button-secondary" style="display:none;">SEB Installer</button>
+        <button type="button" id="launchSEB" class="button-secondary" style="display:none;">Launch SEB</button>
       </nav>
     </header>
 
     <!-- Main Exam Shell -->
-    <main class="shell contest-shell" data-coding-contest>
-      <!-- PIN Gate -->
-      <section class="exam-pin-gate" data-invite-pin-gate hidden>
+    <main class="shell contest-shell exam-main-canvas" data-coding-contest>
+      <!-- PIN Gate (One-Time Student Auth) -->
+      <section class="exam-pin-gate exam-hero-card" data-invite-pin-gate hidden>
         <div class="hero-shield-badge">🔑 One-Time Passcode</div>
-        <h1>Enter Student PIN</h1>
-        <p class="muted">Enter the 6-digit verification PIN issued by your exam administrator.</p>
+        <h1>Candidate Verification</h1>
+        <p class="muted">Enter the 6-digit cryptographic PIN issued by your university or test administrator to unlock your exam.</p>
         <form id="invitePinForm" class="pin-gate-form">
-          <label>
-            6-Digit PIN
-            <input name="pin" type="password" minlength="6" maxlength="6" autocomplete="one-time-code" placeholder="••••••" required />
-          </label>
-          <button type="submit" class="btn-glow">Unlock Proctored Exam</button>
+          <div class="pin-input-group">
+            <input
+              name="pin"
+              type="password"
+              minlength="6"
+              maxlength="6"
+              autocomplete="one-time-code"
+              placeholder="••••••"
+              class="pin-digit-box"
+              required
+              autofocus
+            />
+          </div>
+          <button type="submit" class="btn-glow btn-unlock-exam">
+            <span>Unlock Proctored Exam</span>
+            <span class="arrow-icon">→</span>
+          </button>
         </form>
       </section>
 
-      <!-- Precheck Panel -->
-      <section class="exam-precheck" data-precheck-panel hidden>
-        <div>
-          <div class="hero-shield-badge">⚡ Diagnostics</div>
+      <!-- Precheck Panel (Diagnostics & Face Calibration) -->
+      <section class="exam-precheck exam-hero-card" data-precheck-panel hidden>
+        <div class="precheck-header-wrap">
+          <div class="hero-shield-badge">⚡ Diagnostics &amp; Calibration</div>
           <h1>System Readiness Verification</h1>
-          <p class="muted" data-precheck-copy>Verify camera, location, and fullscreen security before exam activation.</p>
+          <p class="muted" data-precheck-copy>
+            Our AI proctoring engine requires active camera verification, low-latency network connectivity, and fullscreen lockdown before starting.
+          </p>
         </div>
-        <div class="precheck-list">
-          <div class="precheck-item" data-precheck-system><span class="status-dot"></span><div><strong>System</strong><span>Waiting</span></div></div>
-          <div class="precheck-item" data-precheck-camera><span class="status-dot"></span><div><strong>Webcam</strong><span>Waiting</span></div></div>
-          <div class="precheck-item" data-precheck-location><span class="status-dot"></span><div><strong>Location</strong><span>Waiting</span></div></div>
-          <div class="precheck-item" data-precheck-fullscreen><span class="status-dot"></span><div><strong>Lockdown</strong><span>Waiting</span></div></div>
+
+        <div class="precheck-grid">
+          <div class="precheck-item-card" data-precheck-system>
+            <div class="card-icon-slot">🖥️</div>
+            <div class="card-text-slot">
+              <strong>System Integrity</strong>
+              <span>Verifying browser sandbox &amp; OS</span>
+            </div>
+            <div class="card-status-indicator"><span class="status-dot"></span></div>
+          </div>
+
+          <div class="precheck-item-card" data-precheck-camera>
+            <div class="card-icon-slot">📹</div>
+            <div class="card-text-slot">
+              <strong>Webcam &amp; AI Vision</strong>
+              <span>Face centering &amp; gaze tracking</span>
+            </div>
+            <div class="card-status-indicator"><span class="status-dot"></span></div>
+          </div>
+
+          <div class="precheck-item-card" data-precheck-location>
+            <div class="card-icon-slot">🌐</div>
+            <div class="card-text-slot">
+              <strong>Geofence &amp; IP Network</strong>
+              <span>Network security validation</span>
+            </div>
+            <div class="card-status-indicator"><span class="status-dot"></span></div>
+          </div>
+
+          <div class="precheck-item-card" data-precheck-fullscreen>
+            <div class="card-icon-slot">🔒</div>
+            <div class="card-text-slot">
+              <strong>Lockdown Guardrail</strong>
+              <span>Fullscreen &amp; shortcut blocking</span>
+            </div>
+            <div class="card-status-indicator"><span class="status-dot"></span></div>
+          </div>
         </div>
-        <div class="actions">
-          <button type="button" class="btn-glow" data-precheck-start>Initiate Security Checks</button>
+
+        <div class="precheck-action-footer">
+          <button type="button" class="btn-glow btn-precheck-launch" data-precheck-start>
+            <span>Initiate Security Checks</span>
+            <span class="icon">🚀</span>
+          </button>
+          <div class="precheck-note">
+            <span>💡 Tip:</span> Make sure your face is clearly lit and visible in camera preview.
+          </div>
         </div>
       </section>
 
-      <!-- Floating Proctor Camera Strip -->
-      <section class="proctor-strip" data-camera-panel>
-        <div>
-          <div class="eyebrow">AI Proctor Vision</div>
-          <h2 style="font-size:1.1rem;margin-bottom:6px;">Webcam Feed</h2>
-          <p class="muted" style="font-size:0.75rem;margin:0;">Active Face &amp; Gaze Tracker</p>
+      <!-- Floating Picture-In-Picture AI Proctor Camera Strip -->
+      <section class="proctor-strip proctor-floating-pip" data-camera-panel>
+        <div class="proctor-pip-header">
+          <div class="pip-title-cluster">
+            <span class="pip-pulse-dot"></span>
+            <strong>AI Proctor</strong>
+          </div>
+          <button type="button" id="togglePipCollapse" class="pip-collapse-btn" title="Toggle camera preview minimize">−</button>
         </div>
-        <video id="cameraPreview" class="video-box proctor-video" autoplay muted playsinline></video>
+        <div class="proctor-video-wrapper">
+          <video id="cameraPreview" class="video-box proctor-video" autoplay muted playsinline></video>
+          <div class="video-hud-overlay">
+            <span class="hud-bracket top-left"></span>
+            <span class="hud-bracket top-right"></span>
+            <span class="hud-bracket bottom-left"></span>
+            <span class="hud-bracket bottom-right"></span>
+            <div class="hud-badge-tracking">EYE TRACKING ON</div>
+          </div>
+        </div>
       </section>
 
-      <!-- Contest Lock Screen -->
-      <section class="contest-lock" data-lock-screen hidden>
+      <!-- Contest Lock Screen (Waiting for Start Time) -->
+      <section class="contest-lock exam-hero-card" data-lock-screen hidden>
         <div class="hero-shield-badge" data-lock-state>SCHEDULED</div>
-        <h1 data-lock-title>Contest Locked</h1>
+        <h1 data-lock-title>Assessment Scheduled</h1>
         <div class="countdown" data-lock-countdown>--:--:--</div>
-        <p class="muted" data-lock-copy>Waiting for scheduled contest start time.</p>
+        <p class="muted" data-lock-copy>Waiting for scheduled contest start time. Please do not close this window.</p>
       </section>
 
-      <!-- Coding Workspace -->
-      <section class="contest-workspace" data-workspace hidden>
-        <aside class="contest-panel problem-pane">
-          <div class="eyebrow">Problem Statement</div>
-          <div class="student-problem-tabs" data-problem-tabs></div>
-          <h2 data-problem-title>Loading problem...</h2>
-          <div class="problem-copy" data-problem-body></div>
-          <div class="sample-list" data-visible-samples></div>
+      <!-- Section Navigation Switcher (Objective MCQs vs Coding Challenges) -->
+      <nav class="exam-section-tabs-bar" data-section-tabs-bar>
+        <button type="button" class="section-tab-btn active" data-switch-section="mcq">
+          <span class="tab-icon">📝</span>
+          <span>Section 1: Objective &amp; MCQs</span>
+          <span class="section-badge" data-mcq-count-badge>Questions</span>
+        </button>
+        <button type="button" class="section-tab-btn" data-switch-section="coding">
+          <span class="tab-icon">⚡</span>
+          <span>Section 2: Programming &amp; Coding</span>
+          <span class="section-badge" data-coding-count-badge>Live</span>
+        </button>
+      </nav>
+
+      <!-- Objective / Multiple Choice Questions (MCQ) Workspace -->
+      <section class="mcq-workspace-container" data-mcq-workspace>
+        <div data-question-list></div>
+      </section>
+
+      <!-- Coding Workspace (Split View Ergonomics) -->
+      <section class="contest-workspace exam-workspace-3col" data-workspace hidden>
+        <!-- Left Column: Problem Statement & Constraints -->
+        <aside class="contest-panel problem-pane custom-scrollbar">
+          <div class="panel-header-sticky">
+            <div class="eyebrow-chip">QUESTION PALETTE</div>
+            <div class="student-problem-tabs" data-problem-tabs></div>
+          </div>
+
+          <div class="problem-content-wrap">
+            <h2 class="problem-main-title" data-problem-title>Loading problem statement...</h2>
+            <div class="problem-copy" data-problem-body></div>
+            <div class="sample-list" data-visible-samples></div>
+          </div>
         </aside>
 
+        <!-- Center Column: Monaco Code Editor -->
         <section class="contest-panel editor-pane">
           <div class="editor-toolbar">
-            <label>
-              Language
-              <select id="languageSelect">
-                <option value="python">Python 3</option>
-                <option value="cpp">C++ 17</option>
-                <option value="java">Java 17</option>
-              </select>
-            </label>
-            <div class="toolbar-actions">
-              <button type="button" class="button-secondary" data-run-samples>▶ Run Samples</button>
-              <button type="button" class="button" data-submit-code>🚀 Submit Code</button>
+            <div class="lang-selector-wrap">
+              <label for="languageSelect" class="lang-label">Language</label>
+              <div class="select-styled-container">
+                <select id="languageSelect" class="select-styled">
+                  <option value="python">🐍 Python 3</option>
+                  <option value="cpp">⚡ C++ 17</option>
+                  <option value="java">☕ Java 17</option>
+                </select>
+              </div>
             </div>
-            <div class="contest-clock" data-contest-clock>--:--:--</div>
+
+            <div class="toolbar-actions">
+              <button type="button" class="button-secondary btn-run-code" data-run-samples title="Run code on visible samples">
+                <span class="action-icon">▶</span>
+                <span>Run Code</span>
+              </button>
+              <button type="button" class="btn-glow btn-submit-code" data-submit-code title="Submit final code for scoring">
+                <span class="action-icon">🚀</span>
+                <span>Submit Solution</span>
+              </button>
+            </div>
           </div>
+
+          <!-- Monaco Editor Canvas -->
           <div id="monacoEditor" class="editor-host"></div>
         </section>
 
-        <aside class="contest-panel results-pane">
-          <div class="eyebrow">Execution Console</div>
-          <h2 data-score-title>No Run Yet</h2>
-          <div class="case-results" data-result-panel></div>
-          <section class="ai-debug-result" data-ai-debugger hidden aria-live="polite"></section>
+        <!-- Right Column: Execution Console & Case Results -->
+        <aside class="contest-panel results-pane custom-scrollbar">
+          <div class="panel-header-sticky">
+            <div class="eyebrow-chip">EXECUTION CONSOLE</div>
+            <h2 class="console-score-heading" data-score-title>No Run Yet</h2>
+          </div>
+
+          <div class="console-body">
+            <div class="case-results" data-result-panel></div>
+            <section class="ai-debug-result" data-ai-debugger hidden aria-live="polite"></section>
+          </div>
         </aside>
       </section>
     </main>
 
-    <!-- Timeout Modal -->
+    <!-- Timeout / Finish Confirmation Modal -->
     <div class="modal-backdrop" data-timeout-modal hidden>
-      <section class="modal">
-        <div class="eyebrow">Session Ended</div>
-        <h2>Time Expired</h2>
-        <p class="muted">Your exam time limit has ended. Your answers and code have been submitted automatically.</p>
+      <section class="modal exam-completion-modal">
+        <div class="modal-icon-badge">🏁</div>
+        <div class="eyebrow">Session Completed</div>
+        <h2>Assessment Finished</h2>
+        <p class="muted">Your exam time limit has ended or your submission has been finalized. All verified code solutions and proctor logs are securely archived.</p>
         <div class="actions">
-          <button type="button" data-modal-close>OK, View Submission</button>
+          <button type="button" class="btn-glow" data-modal-close style="width:100%;padding:14px;">
+            View Detailed Submission Summary
+          </button>
         </div>
       </section>
     </div>
 
+    <!-- Core Proctoring & Contest Scripts -->
     <script src="../js/main.js"></script>
     <script src="../js/tracking.js"></script>
     <script src="../js/camera.js"></script>
     <script type="module" src="../js/proctor_ai.js"></script>
     <script src="../js/precheck.js"></script>
+    <script src="../js/mobile_lockdown.js"></script>
+    <script src="../js/invigilator_client.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.49.0/min/vs/loader.min.js"></script>
     <script src="../js/coding.js"></script>
     <script src="../js/lockdown.js"></script>
+
+    <!-- Client SEB & PIP Enhancer Script -->
     <script>
 (function(){
   const API = (localStorage.getItem("examguard_api_base") || "https://examguard-ai-317p.onrender.com/api").replace(/\/$/,"");
@@ -202,6 +369,17 @@
   document.getElementById("downloadSafeBrowser")?.addEventListener("click", function(){ window.location.href = API+"/download/safe-browser"; });
   document.getElementById("launchSEB")?.addEventListener("click", function(){ window.location.href = token ? API+"/download/seb-config?token="+encodeURIComponent(token) : API+"/download/seb-config"; });
   document.getElementById("gateDownloadExe")?.addEventListener("click", function(e){ e.preventDefault(); window.location.href = API+"/download/safe-browser"; });
+
+  // Floating PIP minimize toggle
+  const pipCollapseBtn = document.getElementById("togglePipCollapse");
+  const pipStrip = document.querySelector(".proctor-floating-pip");
+  if (pipCollapseBtn && pipStrip) {
+    pipCollapseBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      pipStrip.classList.toggle("pip-minimized");
+      pipCollapseBtn.textContent = pipStrip.classList.contains("pip-minimized") ? "+" : "−";
+    });
+  }
 })();
     </script>
   </body>

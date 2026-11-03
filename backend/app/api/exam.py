@@ -4,10 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_student
+from app.core.security import require_admin, require_student
 from app.db.models import ExamLog, ExamSession, Question, Response
 from app.db.session import get_db
-from app.schemas.exam import AnswerSubmit, QuestionOut, ResponseOut
+from app.schemas.exam import (
+    AnswerSubmit,
+    QuestionAdminOut,
+    QuestionCreate,
+    QuestionOut,
+    ResponseOut,
+)
+from app.services.question_shuffler import generate_student_paper
 
 router = APIRouter(prefix="/exam", tags=["exam"])
 
@@ -54,22 +61,21 @@ async def _latest_session(
 @router.get("/questions", response_model=list[QuestionOut])
 async def get_questions(
     db: AsyncSession = Depends(get_db),
-    _subject: dict[str, object] = Depends(require_student),
+    subject: dict[str, object] = Depends(require_student),
 ) -> list[QuestionOut]:
     result = await db.execute(select(Question).order_by(Question.id))
     questions = result.scalars().all()
+    student_id = int(subject.get("student_id", 1))
+
+    # Deterministic shuffling per student
+    shuffled = generate_student_paper(questions, student_seed=student_id)
     return [
         QuestionOut(
-            id=question.id,
-            question=question.question_text,
-            options=[
-                question.option_a,
-                question.option_b,
-                question.option_c,
-                question.option_d,
-            ],
+            id=item["id"],
+            question=item["question"],
+            options=item["options"],
         )
-        for question in questions
+        for item in shuffled
     ]
 
 
@@ -146,3 +152,67 @@ async def save_timestamp(
     )
     await db.commit()
     return {"event": normalized_event, "timestamp": timestamp.isoformat()}
+
+
+@router.get("/admin/questions", response_model=list[QuestionAdminOut])
+async def list_admin_questions(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+) -> list[QuestionAdminOut]:
+    result = await db.execute(select(Question).order_by(Question.id))
+    questions = result.scalars().all()
+    return [
+        QuestionAdminOut(
+            id=q.id,
+            question=q.question_text,
+            option_a=q.option_a,
+            option_b=q.option_b,
+            option_c=q.option_c,
+            option_d=q.option_d,
+            correct_option=q.correct_option,
+        )
+        for q in questions
+    ]
+
+
+@router.post("/admin/questions", response_model=QuestionAdminOut, status_code=status.HTTP_201_CREATED)
+async def create_admin_question(
+    payload: QuestionCreate,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+) -> QuestionAdminOut:
+    question = Question(
+        question_text=payload.question_text,
+        option_a=payload.option_a,
+        option_b=payload.option_b,
+        option_c=payload.option_c,
+        option_d=payload.option_d,
+        correct_option=payload.correct_option,
+    )
+    db.add(question)
+    await db.commit()
+    await db.refresh(question)
+    return QuestionAdminOut(
+        id=question.id,
+        question=question.question_text,
+        option_a=question.option_a,
+        option_b=question.option_b,
+        option_c=question.option_c,
+        option_d=question.option_d,
+        correct_option=question.correct_option,
+    )
+
+
+@router.delete("/admin/questions/{question_id}")
+async def delete_admin_question(
+    question_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+) -> dict[str, str | int]:
+    question = await db.get(Question, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    await db.delete(question)
+    await db.commit()
+    return {"status": "deleted", "question_id": question_id}
+
