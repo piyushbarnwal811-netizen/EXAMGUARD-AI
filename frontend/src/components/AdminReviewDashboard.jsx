@@ -195,7 +195,6 @@ export default function AdminReviewDashboard({
       };
     }
   }, [computedTrustScore]);
-
   // Filtered timeline stream
   const filteredTimeline = useMemo(() => {
     if (activeFilter === "ALL") return data.timeline;
@@ -217,10 +216,10 @@ export default function AdminReviewDashboard({
       timeline: prev.timeline.map((v) =>
         v.id === violationId
           ? {
-              ...v,
-              reviewStatus: newStatus,
-              examinerNotes: examinerNoteInput || v.examinerNotes,
-            }
+            ...v,
+            reviewStatus: newStatus,
+            examinerNotes: examinerNoteInput || v.examinerNotes,
+          }
           : v
       ),
     }));
@@ -460,51 +459,46 @@ export default function AdminReviewDashboard({
             <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
               <button
                 onClick={() => setActiveFilter("ALL")}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeFilter === "ALL"
+                className={`px-3 py-1.5 rounded-lg transition ${activeFilter === "ALL"
                     ? "bg-indigo-600 text-white"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 All Events
               </button>
               <button
                 onClick={() => setActiveFilter("VISION")}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeFilter === "VISION"
+                className={`px-3 py-1.5 rounded-lg transition ${activeFilter === "VISION"
                     ? "bg-indigo-600 text-white"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 Visual AI (Gaze/Faces)
               </button>
               <button
                 onClick={() => setActiveFilter("ENVIRONMENT")}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeFilter === "ENVIRONMENT"
+                className={`px-3 py-1.5 rounded-lg transition ${activeFilter === "ENVIRONMENT"
                     ? "bg-indigo-600 text-white"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 Environment & Tabs
               </button>
               <button
                 onClick={() => setActiveFilter("AUDIO")}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeFilter === "AUDIO"
+                className={`px-3 py-1.5 rounded-lg transition ${activeFilter === "AUDIO"
                     ? "bg-indigo-600 text-white"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 Acoustic / Speech
               </button>
               <button
                 onClick={() => setActiveFilter("FLAGGED")}
-                className={`px-3 py-1.5 rounded-lg transition ${
-                  activeFilter === "FLAGGED"
+                className={`px-3 py-1.5 rounded-lg transition ${activeFilter === "FLAGGED"
                     ? "bg-indigo-600 text-white"
                     : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
-                }`}
+                  }`}
               >
                 Active Only
               </button>
@@ -520,13 +514,12 @@ export default function AdminReviewDashboard({
               return (
                 <div
                   key={item.id}
-                  className={`group relative bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border transition-all hover:shadow-md cursor-pointer ${
-                    isDismissed
+                  className={`group relative bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border transition-all hover:shadow-md cursor-pointer ${isDismissed
                       ? "opacity-60 border-slate-200 dark:border-slate-800"
                       : isConfirmed
-                      ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50/20"
-                      : "border-slate-300 dark:border-slate-700 hover:border-indigo-400"
-                  }`}
+                        ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50/20"
+                        : "border-slate-300 dark:border-slate-700 hover:border-indigo-400"
+                    }`}
                   onClick={() => {
                     setSelectedViolation(item);
                     setExaminerNoteInput(item.examinerNotes || "");
@@ -534,13 +527,12 @@ export default function AdminReviewDashboard({
                 >
                   {/* Timeline bullet dot */}
                   <div
-                    className={`absolute -left-[31px] top-5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 ${
-                      item.severity === "high"
+                    className={`absolute -left-[31px] top-5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 ${item.severity === "high"
                         ? "bg-rose-500"
                         : item.severity === "medium"
-                        ? "bg-amber-500"
-                        : "bg-blue-500"
-                    }`}
+                          ? "bg-amber-500"
+                          : "bg-blue-500"
+                      }`}
                   />
 
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -553,13 +545,12 @@ export default function AdminReviewDashboard({
 
                         {/* Review Status Pill */}
                         <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                            isDismissed
+                          className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isDismissed
                               ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
                               : isConfirmed
-                              ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
-                              : "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400"
-                          }`}
+                                ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+                                : "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400"
+                            }`}
                         >
                           {item.reviewStatus}
                         </span>
