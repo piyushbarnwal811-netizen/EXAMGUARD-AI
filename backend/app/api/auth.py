@@ -218,3 +218,68 @@ async def verify_invite(
         session_id=session.id,
         roll_no=student.roll_no,
     )
+
+
+class CoachingCandidateOnboard(BaseModel):
+    name: str
+    roll_no: str
+    contact: str | None = None
+    coaching_name: str
+    exam_id: str | None = None
+
+
+@router.post("/coaching-candidate-onboard", response_model=TokenResponse)
+async def coaching_candidate_onboard(
+    payload: CoachingCandidateOnboard,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    roll_no = payload.roll_no.strip().upper()
+    name = payload.name.strip()
+    contact = (payload.contact or "").strip()
+    email = contact if "@" in contact else f"{roll_no.lower()}@student.examguard.ai"
+
+    result = await db.execute(select(Student).where(Student.roll_no == roll_no))
+    student = result.scalar_one_or_none()
+    if not student:
+        student = Student(
+            name=name,
+            roll_no=roll_no,
+            email=email,
+            is_pin_used=True,
+            is_invite_used=True,
+        )
+        db.add(student)
+        await db.flush()
+    else:
+        student.name = name
+
+    client_ip = get_client_ip(request)
+    session = ExamSession(
+        student_id=student.id,
+        ip_address=client_ip,
+        location=payload.coaching_name.strip(),
+        network_isp=None,
+    )
+    db.add(session)
+    await db.flush()
+    await db.commit()
+
+    token = create_access_token(
+        {
+            "sub": student.roll_no,
+            "role": "student",
+            "student_id": student.id,
+            "roll_no": student.roll_no,
+            "session_id": session.id,
+            "coaching_name": payload.coaching_name.strip(),
+        }
+    )
+    return TokenResponse(
+        access_token=token,
+        role="student",
+        student_id=student.id,
+        session_id=session.id,
+        roll_no=student.roll_no,
+    )
+

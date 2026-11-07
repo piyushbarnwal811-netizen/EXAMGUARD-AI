@@ -387,61 +387,260 @@
 
             <!-- OBJECTIVE & MCQ QUESTION BANK -->
             <section class="mcq-admin-panel" style="margin-top:40px;border-top:1px solid var(--line);padding-top:30px;">
-              <div class="panel-head">
+              <div class="panel-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
                 <div>
-                  <div class="hero-shield-badge">📝 Multiple Choice Questions</div>
-                  <h3 style="font-size:1.3rem;margin:8px 0 4px;">Objective (MCQ) Question Bank</h3>
-                  <p class="muted">Add, preview, and manage multiple choice questions with 4 options and automated scoring.</p>
+                  <div class="hero-shield-badge">📝 Objective (MCQ) Assessment Studio</div>
+                  <h3 style="font-size:1.3rem;margin:8px 0 4px;">Question Bank &amp; Coaching Publishing</h3>
+                  <p class="muted">Add questions via Excel/CSV, Paper Paste, AI generator, or create branded exams with anti-cheating watermarks.</p>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                  <button type="button" id="btnOpenPublishModal" class="btn-glow" style="padding:10px 22px;font-size:0.9rem;display:inline-flex;align-items:center;gap:8px;">
+                    🚀 Publish Exam for Coaching
+                  </button>
+                  <button type="button" id="btnClearAllMcqs" class="button-danger btn-sm" style="padding:8px 14px;">
+                    🗑️ Clear All MCQs
+                  </button>
                 </div>
               </div>
 
-              <!-- New MCQ Question Form -->
-              <form id="createMcqForm" style="background:rgba(2,6,23,0.5);border:1px solid var(--line);border-radius:12px;padding:24px;margin:20px 0;">
-                <label>
-                  Question Statement
-                  <textarea id="mcqQuestionText" name="question_text" rows="3" placeholder="e.g. Which data structure uses LIFO (Last In First Out) principle?" required></textarea>
-                </label>
+              <!-- Question Addition Mode Navigation Tabs -->
+              <nav class="mcq-studio-nav" aria-label="Question import modes">
+                <button type="button" class="mcq-subtab-btn active" data-mcq-tab="upload">
+                  📁 Excel / CSV Bulk Upload
+                </button>
+                <button type="button" class="mcq-subtab-btn" data-mcq-tab="paste">
+                  📋 Quick Paper Paste
+                </button>
+                <button type="button" class="mcq-subtab-btn" data-mcq-tab="ai">
+                  ✨ AI Bulk Generator
+                </button>
+                <button type="button" class="mcq-subtab-btn" data-mcq-tab="single">
+                  ➕ Single Question Add
+                </button>
+              </nav>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0;">
-                  <label>
-                    Option A
-                    <input id="mcqOptA" name="option_a" type="text" placeholder="e.g. Queue" required />
-                  </label>
-                  <label>
-                    Option B
-                    <input id="mcqOptB" name="option_b" type="text" placeholder="e.g. Stack" required />
-                  </label>
-                  <label>
-                    Option C
-                    <input id="mcqOptC" name="option_c" type="text" placeholder="e.g. Binary Tree" required />
-                  </label>
-                  <label>
-                    Option D
-                    <input id="mcqOptD" name="option_d" type="text" placeholder="e.g. Linked List" required />
-                  </label>
+              <!-- TAB 1: EXCEL / CSV BULK UPLOAD -->
+              <div class="mcq-import-view" id="mcqViewUpload">
+                <div class="dropzone-container" id="mcqDropzoneBox" style="cursor:pointer;">
+                  <div class="dropzone-icon">📊</div>
+                  <div class="dropzone-title">Upload Questions Spreadsheet (.xlsx, .xls, .csv)</div>
+                  <div class="dropzone-desc">Drag & drop your question sheet here, or click to browse. Easily upload 50–500 questions in 1 second.</div>
+                  <div class="dropzone-chips">
+                    <span class="format-chip">.XLSX</span>
+                    <span class="format-chip">.XLS</span>
+                    <span class="format-chip">.CSV</span>
+                  </div>
+                  <input id="mcqSheetInput" type="file" accept=".xlsx,.xls,.csv" style="display:none;" />
+                  <div id="mcqFileSelectedBox" class="file-selected-box" style="display:none;">
+                    <span style="font-size:1.4rem;">📄</span>
+                    <div style="flex:1;">
+                      <strong id="mcqFileSelectedName">No file chosen</strong>
+                      <div class="muted" id="mcqFileSelectedSize" style="font-size:0.75rem;">-</div>
+                    </div>
+                    <button type="button" id="removeMcqFileBtn" class="button-secondary btn-sm" style="min-height:28px;">Change</button>
+                  </div>
                 </div>
 
-                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-                  <label style="flex:1;min-width:200px;">
-                    Correct Answer
-                    <select id="mcqCorrectOption" name="correct_option" required style="width:100%;padding:10px;border-radius:8px;background:rgba(15,23,42,0.9);color:#fff;border:1px solid var(--line);">
-                      <option value="A">Option A</option>
-                      <option value="B" selected>Option B</option>
-                      <option value="C">Option C</option>
-                      <option value="D">Option D</option>
-                    </select>
-                  </label>
-                  <button type="submit" class="btn-glow" style="margin-top:22px;padding:12px 24px;">
-                    ➕ Save MCQ Question
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:12px;">
+                  <button type="button" id="btnUploadMcqSheet" class="btn-glow" style="padding:12px 24px;">
+                    🚀 Upload &amp; Import Questions
+                  </button>
+                  <div class="template-download-strip" style="border:none;padding:0;margin:0;">
+                    <span>Need sample format?</span>
+                    <a href="/api/exam/admin/questions/sample-template?format=xlsx" class="button button-secondary btn-sm" download>
+                      ⬇️ Template (.xlsx)
+                    </a>
+                    <a href="/api/exam/admin/questions/sample-template?format=csv" class="button button-secondary btn-sm" download>
+                      ⬇️ Template (.csv)
+                    </a>
+                  </div>
+                </div>
+                <div id="mcqUploadStatus" style="margin-top:12px;font-size:0.85rem;"></div>
+              </div>
+
+              <!-- TAB 2: QUICK PAPER PASTE -->
+              <div class="mcq-import-view" id="mcqViewPaste" style="display:none;">
+                <p class="muted" style="margin-top:0;font-size:0.85rem;line-height:1.5;">
+                  Copy &amp; paste question sets directly from Word, Notepad, or PDF. Format each question with choices <code>A) B) C) D)</code> and <code>Answer: A</code> (or <code>Ans: B</code>).
+                </p>
+                <textarea id="mcqPasteText" rows="9" style="width:100%;background:#090d16;border:1px solid var(--line);border-radius:8px;padding:14px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:0.82rem;line-height:1.5;" placeholder="1. What is the capital of France?&#10;A) Berlin&#10;B) Madrid&#10;C) Paris&#10;D) Rome&#10;Answer: C&#10;&#10;2. Which data structure follows LIFO?&#10;A. Queue&#10;B. Stack&#10;C. Array&#10;D. Tree&#10;Ans: B"></textarea>
+                
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:12px;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span id="mcqPasteDetectedCount" style="padding:4px 10px;border-radius:999px;background:rgba(0,242,254,0.15);border:1px solid rgba(0,242,254,0.4);color:var(--accent);font-size:0.75rem;font-weight:700;">
+                      0 Questions Detected
+                    </span>
+                  </div>
+                  <button type="button" id="btnParsePasteMcq" class="btn-glow" style="padding:10px 24px;">
+                    ⚡ Parse &amp; Add All Questions
                   </button>
                 </div>
-              </form>
+              </div>
 
-              <!-- List of Current MCQs -->
+              <!-- TAB 3: AI BULK GENERATOR -->
+              <div class="mcq-import-view" id="mcqViewAi" style="display:none;">
+                <p class="muted" style="margin-top:0;font-size:0.85rem;">
+                  Generate complete multiple-choice question papers instantly on any academic or technical topic using AI.
+                </p>
+                <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:16px;">
+                  <label>
+                    Topic / Subject
+                    <input id="aiMcqTopic" type="text" placeholder="e.g. Operating Systems, Physics Kinematics, Python OOP" required />
+                  </label>
+                  <label>
+                    Number of Questions
+                    <select id="aiMcqCount" style="width:100%;padding:10px;border-radius:8px;background:rgba(15,23,42,0.9);color:#fff;border:1px solid var(--line);">
+                      <option value="5" selected>5 Questions</option>
+                      <option value="10">10 Questions</option>
+                      <option value="15">15 Questions</option>
+                      <option value="20">20 Questions</option>
+                      <option value="30">30 Questions</option>
+                    </select>
+                  </label>
+                  <label>
+                    Difficulty
+                    <select id="aiMcqDifficulty" style="width:100%;padding:10px;border-radius:8px;background:rgba(15,23,42,0.9);color:#fff;border:1px solid var(--line);">
+                      <option value="Easy">Easy</option>
+                      <option value="Medium" selected>Medium</option>
+                      <option value="Hard">Hard</option>
+                    </select>
+                  </label>
+                </div>
+
+                <button type="button" id="btnGenerateAiMcqs" class="btn-glow" style="padding:12px 24px;">
+                  ✨ Generate &amp; Save MCQs
+                </button>
+                <div id="aiMcqStatus" style="margin-top:12px;font-size:0.85rem;"></div>
+              </div>
+
+              <!-- TAB 4: SINGLE QUESTION ADD (Existing Manual Form) -->
+              <div class="mcq-import-view" id="mcqViewSingle" style="display:none;">
+                <form id="createMcqForm" style="padding:0;background:none;border:none;margin:0;">
+                  <label>
+                    Question Statement
+                    <textarea id="mcqQuestionText" name="question_text" rows="3" placeholder="e.g. Which data structure uses LIFO (Last In First Out) principle?" required></textarea>
+                  </label>
+
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0;">
+                    <label>
+                      Option A
+                      <input id="mcqOptA" name="option_a" type="text" placeholder="e.g. Queue" required />
+                    </label>
+                    <label>
+                      Option B
+                      <input id="mcqOptB" name="option_b" type="text" placeholder="e.g. Stack" required />
+                    </label>
+                    <label>
+                      Option C
+                      <input id="mcqOptC" name="option_c" type="text" placeholder="e.g. Binary Tree" required />
+                    </label>
+                    <label>
+                      Option D
+                      <input id="mcqOptD" name="option_d" type="text" placeholder="e.g. Linked List" required />
+                    </label>
+                  </div>
+
+                  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                    <label style="flex:1;min-width:200px;">
+                      Correct Answer
+                      <select id="mcqCorrectOption" name="correct_option" required style="width:100%;padding:10px;border-radius:8px;background:rgba(15,23,42,0.9);color:#fff;border:1px solid var(--line);">
+                        <option value="A">Option A</option>
+                        <option value="B" selected>Option B</option>
+                        <option value="C">Option C</option>
+                        <option value="D">Option D</option>
+                      </select>
+                    </label>
+                    <button type="submit" class="btn-glow" style="margin-top:22px;padding:12px 24px;">
+                      ➕ Save MCQ Question
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- List of Current MCQs in Bank -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;">
+                <h4 style="margin:0;font-size:1.1rem;color:#fff;">
+                  Active Questions in Bank (<span id="adminMcqCount">0</span>)
+                </h4>
+                <button type="button" id="btnRefreshMcqList" class="button-secondary btn-sm">
+                  🔄 Refresh List
+                </button>
+              </div>
               <div id="adminMcqList" class="mcq-admin-list" style="display:grid;gap:12px;"></div>
             </section>
           </div>
         </section>
+
+        <!-- PUBLISH COACHING EXAM MODAL -->
+        <div id="publishExamModal" class="modal-backdrop" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(5,9,18,0.92);align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(20px);">
+          <section class="modal exam-hero-card" style="max-width:560px;width:100%;border:1px solid rgba(0,242,254,0.3);box-shadow:0 0 50px rgba(0,242,254,0.2);padding:32px 28px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+              <div class="hero-shield-badge">🚀 Publish &amp; Share Exam</div>
+              <button type="button" id="closePublishModal" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">✕</button>
+            </div>
+            <h2 class="gradient-title" style="font-size:1.7rem;margin:0 0 8px;">Create Coaching Exam URL</h2>
+            <p class="muted" style="font-size:0.85rem;margin-bottom:20px;">
+              Generate a shareable proctored exam link for your students with automated self-registration and anti-cheating watermarks.
+            </p>
+
+            <!-- Publish Input Form -->
+            <form id="publishExamForm" style="display:grid;gap:14px;text-align:left;">
+              <label>
+                <span style="font-size:0.8rem;font-weight:700;color:var(--ink);">Coaching / Institute Name <span style="color:var(--warning);">*</span></span>
+                <input type="text" id="pubCoachingName" required placeholder="e.g. Apex Classes, Allen Institute, Physics Wallah" style="width:100%;padding:11px;border-radius:8px;background:rgba(15,23,42,0.8);border:1px solid var(--line);color:#fff;" />
+              </label>
+
+              <label>
+                <span style="font-size:0.8rem;font-weight:700;color:var(--ink);">Exam Title / Subject <span style="color:var(--warning);">*</span></span>
+                <input type="text" id="pubExamTitle" required placeholder="e.g. Class 12 Physics Full Mock Test" style="width:100%;padding:11px;border-radius:8px;background:rgba(15,23,42,0.8);border:1px solid var(--line);color:#fff;" />
+              </label>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <label>
+                  <span style="font-size:0.8rem;font-weight:700;color:var(--ink);">Exam Duration (Minutes)</span>
+                  <input type="number" id="pubDuration" value="60" min="5" max="300" style="width:100%;padding:11px;border-radius:8px;background:rgba(15,23,42,0.8);border:1px solid var(--line);color:#fff;" />
+                </label>
+                <label>
+                  <span style="font-size:0.8rem;font-weight:700;color:var(--muted);">Total Marks (Optional)</span>
+                  <input type="number" id="pubTotalMarks" placeholder="e.g. 100" style="width:100%;padding:11px;border-radius:8px;background:rgba(15,23,42,0.8);border:1px solid var(--line);color:#fff;" />
+                </label>
+              </div>
+
+              <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.2);border-radius:8px;padding:12px;font-size:0.75rem;color:#cbd5e1;line-height:1.4;">
+                🛡️ <strong>Anti-Leak Guarantee:</strong> When students take this exam, their <strong>Name + Roll Number + Coaching Name</strong> will be visibly watermarked diagonally across every question. Any mobile photography will permanently link the leaked image to that candidate.
+              </div>
+
+              <button type="submit" class="btn-glow" style="width:100%;padding:14px;font-size:1rem;margin-top:6px;">
+                🚀 Generate Shareable Exam Link
+              </button>
+            </form>
+
+            <!-- Success Card with Link & WhatsApp Share -->
+            <div id="publishSuccessView" style="display:none;margin-top:20px;text-align:left;background:rgba(15,23,42,0.9);border:1px solid rgba(0,230,118,0.4);border-radius:12px;padding:20px;">
+              <div style="display:flex;align-items:center;gap:8px;color:#00e676;font-weight:700;font-size:0.95rem;margin-bottom:12px;">
+                <span>✅ Exam Published Successfully!</span>
+              </div>
+              <p class="muted" style="font-size:0.8rem;margin:0 0 10px;">Send this link to your students via WhatsApp, Telegram, or Email:</p>
+              
+              <div style="display:flex;gap:8px;margin-bottom:14px;">
+                <input type="text" id="pubShareableLink" readonly style="flex:1;padding:10px;border-radius:8px;background:#090d16;border:1px solid var(--line);color:#00f2fe;font-family:'JetBrains Mono',monospace;font-size:0.78rem;" />
+                <button type="button" id="btnCopyPubLink" class="button" style="white-space:nowrap;padding:10px 16px;">
+                  📋 Copy Link
+                </button>
+              </div>
+
+              <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <a id="pubWhatsappShareBtn" href="#" target="_blank" class="button" style="flex:1;background:#25d366;color:#fff;border:none;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;">
+                  📲 Share on WhatsApp
+                </a>
+                <a id="pubOpenStudentPreview" href="#" target="_blank" class="button button-secondary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+                  👀 Open as Student
+                </a>
+              </div>
+            </div>
+          </section>
+        </div>
+
 
         <!-- TAB 4: EXAM REPORTS & HISTORY -->
         <section class="admin-tab-content" id="tab-reports">

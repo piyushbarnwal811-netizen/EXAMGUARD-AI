@@ -1766,8 +1766,11 @@ async function loadAdminMcqs() {
     });
     if (!response.ok) return;
     const questions = await response.json();
+    const countEl = qs("#adminMcqCount");
+    if (countEl) countEl.textContent = questions.length;
+
     if (!questions.length) {
-      holder.innerHTML = `<p class="muted" style="padding:16px;">No objective questions added yet. Use the form above to add your first MCQ.</p>`;
+      holder.innerHTML = `<p class="muted" style="padding:16px;">No objective questions added yet. Use the upload or generator tabs above to add your questions.</p>`;
       return;
     }
     holder.innerHTML = questions
@@ -1829,6 +1832,489 @@ async function handleCreateMcq(e) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// BULK MCQ STUDIO & COACHING PUBLISHING ENGINE
+// ---------------------------------------------------------------------------
+
+function parseMcqPasteText(rawText) {
+  if (!rawText || !rawText.trim()) return [];
+  const blocks = rawText.split(/(?=(?:^|\n)\s*(?:Q\s*\d+[\.\:\)]|\d+[\.\:\)]|Question\s*\d+[\.\:\)]))\s*/i).filter((b) => b.trim().length > 10);
+  const questions = [];
+
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 3) continue;
+
+    let qText = "";
+    let optA = "", optB = "", optC = "", optD = "";
+    let ans = "";
+
+    for (const line of lines) {
+      const matchQ = line.match(/^(?:Q\s*\d+[\.\:\)]|\d+[\.\:\)]|Question\s*\d+[\.\:\)])\s*(.*)/i);
+      const matchOptA = line.match(/^[(\[]?A[)\]\.\:]\s*(.*)/i);
+      const matchOptB = line.match(/^[(\[]?B[)\]\.\:]\s*(.*)/i);
+      const matchOptC = line.match(/^[(\[]?C[)\]\.\:]\s*(.*)/i);
+      const matchOptD = line.match(/^[(\[]?D[)\]\.\:]\s*(.*)/i);
+      const matchAns = line.match(/^(?:Answer|Ans|Correct|Key)[\:\s\-]+([A-D])/i);
+
+      if (matchAns) {
+        ans = matchAns[1].toUpperCase();
+      } else if (matchOptA) {
+        optA = matchOptA[1].trim();
+      } else if (matchOptB) {
+        optB = matchOptB[1].trim();
+      } else if (matchOptC) {
+        optC = matchOptC[1].trim();
+      } else if (matchOptD) {
+        optD = matchOptD[1].trim();
+      } else if (matchQ) {
+        qText = matchQ[1].trim();
+      } else if (!optA && !qText) {
+        qText = line;
+      } else if (!optA) {
+        qText += " " + line;
+      }
+    }
+
+    if (qText && optA && optB && optC && optD && ans) {
+      questions.push({
+        question_text: qText,
+        option_a: optA,
+        option_b: optB,
+        option_c: optC,
+        option_d: optD,
+        correct_option: ans,
+      });
+    }
+  }
+
+  return questions;
+}
+
+function wireMcqStudio() {
+  // Sub-Tab Switcher
+  const subtabBtns = document.querySelectorAll("[data-mcq-tab]");
+  subtabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      subtabBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const target = btn.dataset.mcqTab;
+
+      const views = {
+        upload: qs("#mcqViewUpload"),
+        paste: qs("#mcqViewPaste"),
+        ai: qs("#mcqViewAi"),
+        single: qs("#mcqViewSingle"),
+      };
+
+      Object.keys(views).forEach((k) => {
+        if (views[k]) views[k].style.display = k === target ? "block" : "none";
+      });
+    });
+  });
+
+  // Excel / CSV File Dropzone
+  const dropzone = qs("#mcqDropzoneBox");
+  const fileInput = qs("#mcqSheetInput");
+  const fileBox = qs("#mcqFileSelectedBox");
+  const fileNameEl = qs("#mcqFileSelectedName");
+  const fileSizeEl = qs("#mcqFileSelectedSize");
+  const removeFileBtn = qs("#removeMcqFileBtn");
+  let selectedSheetFile = null;
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener("click", () => fileInput.click());
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = "var(--accent)";
+    });
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.style.borderColor = "";
+    });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = "";
+      if (e.dataTransfer.files.length) {
+        handleFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length) {
+        handleFileSelect(fileInput.files[0]);
+      }
+    });
+
+    function handleFileSelect(file) {
+      selectedSheetFile = file;
+      if (fileNameEl) fileNameEl.textContent = file.name;
+      if (fileSizeEl) fileSizeEl.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+      if (fileBox) fileBox.style.display = "flex";
+    }
+
+    removeFileBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedSheetFile = null;
+      fileInput.value = "";
+      if (fileBox) fileBox.style.display = "none";
+    });
+
+    // Upload & Import Button
+    qs("#btnUploadMcqSheet")?.addEventListener("click", async () => {
+      if (!selectedSheetFile) {
+        showToast("Please choose or drag an Excel (.xlsx) or CSV file first.", "warning");
+        return;
+      }
+      const statusEl = qs("#mcqUploadStatus");
+      if (statusEl) {
+        statusEl.innerHTML = `<span style="color:var(--accent);">⏳ Uploading and importing questions...</span>`;
+      }
+
+      const formData = new FormData();
+      formData.append("file", selectedSheetFile);
+
+      try {
+        const res = await fetch(`${API_BASE}/exam/admin/questions/upload-sheet`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail?.message || data.detail || "Upload failed");
+        }
+        showToast(`✅ Successfully imported ${data.imported_count} questions from spreadsheet!`, "success", 4000);
+        if (statusEl) {
+          statusEl.innerHTML = `<span style="color:#00e676;">✅ Imported ${data.imported_count} questions successfully!</span>`;
+        }
+        selectedSheetFile = null;
+        fileInput.value = "";
+        if (fileBox) fileBox.style.display = "none";
+        loadAdminMcqs();
+      } catch (err) {
+        showToast(err.message, "warning", 5000);
+        if (statusEl) {
+          statusEl.innerHTML = `<span style="color:var(--warning);">❌ Error: ${err.message}</span>`;
+        }
+      }
+    });
+  }
+
+  // Quick Paper Paste
+  const pasteArea = qs("#mcqPasteText");
+  const countBadge = qs("#mcqPasteDetectedCount");
+  if (pasteArea) {
+    pasteArea.addEventListener("input", () => {
+      const parsed = parseMcqPasteText(pasteArea.value);
+      if (countBadge) {
+        countBadge.textContent = `${parsed.length} Questions Detected`;
+      }
+    });
+
+    qs("#btnParsePasteMcq")?.addEventListener("click", async () => {
+      const parsed = parseMcqPasteText(pasteArea.value);
+      if (!parsed.length) {
+        showToast("No valid questions detected in pasted text. Check format: '1. Q? A) .. B) .. C) .. D) .. Answer: A'", "warning");
+        return;
+      }
+
+      try {
+        showToast(`Importing ${parsed.length} questions...`, "info");
+        const res = await postJson("/exam/admin/questions/bulk", parsed);
+        showToast(`✅ Successfully imported ${res.imported_count} questions!`, "success", 4000);
+        pasteArea.value = "";
+        if (countBadge) countBadge.textContent = "0 Questions Detected";
+        loadAdminMcqs();
+      } catch (err) {
+        showToast(err.message, "warning");
+      }
+    });
+  }
+
+  // AI Bulk Generator
+  qs("#btnGenerateAiMcqs")?.addEventListener("click", async () => {
+    const topicInput = qs("#aiMcqTopic");
+    const countSelect = qs("#aiMcqCount");
+    const diffSelect = qs("#aiMcqDifficulty");
+    const statusEl = qs("#aiMcqStatus");
+
+    const topic = topicInput?.value.trim();
+    if (!topic) {
+      showToast("Please enter a subject or topic for question generation.", "warning");
+      topicInput?.focus();
+      return;
+    }
+
+    const count = Number(countSelect?.value || 5);
+    const difficulty = diffSelect?.value || "Medium";
+
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--accent);">🤖 AI is generating ${count} ${difficulty} MCQs on '${topic}'...</span>`;
+
+    try {
+      const res = await postJson("/exam/admin/questions/generate-ai-mcqs", {
+        topic,
+        count,
+        difficulty,
+        save_immediately: true,
+      });
+
+      showToast(`✅ AI generated and saved ${res.count} questions!`, "success", 4000);
+      if (statusEl) {
+        statusEl.innerHTML = `<span style="color:#00e676;">✅ Generated and added ${res.count} questions to bank!</span>`;
+      }
+      loadAdminMcqs();
+    } catch (err) {
+      showToast(err.message, "warning");
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--warning);">❌ Generation error: ${err.message}</span>`;
+    }
+  });
+
+  // Clear All MCQs
+  qs("#btnClearAllMcqs")?.addEventListener("click", async () => {
+    if (confirm("Are you sure you want to DELETE ALL objective questions in the question bank? This action cannot be undone.")) {
+      try {
+        await apiFetch("/exam/admin/questions/all", {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        showToast("All objective questions cleared.", "info");
+        loadAdminMcqs();
+      } catch (err) {
+        showToast(err.message, "warning");
+      }
+    }
+  });
+
+  // Refresh MCQs
+  qs("#btnRefreshMcqList")?.addEventListener("click", () => {
+    loadAdminMcqs();
+    showToast("Refreshed question bank.", "info", 1500);
+  });
+
+  // Publish Coaching Exam Modal Handlers
+  const publishModal = qs("#publishExamModal");
+  const openPubBtn = qs("#btnOpenPublishModal");
+  const closePubBtn = qs("#closePublishModal");
+  const publishForm = qs("#publishExamForm");
+  const successView = qs("#publishSuccessView");
+  const shareableInput = qs("#pubShareableLink");
+  const copyBtn = qs("#btnCopyPubLink");
+  const whatsappBtn = qs("#pubWhatsappShareBtn");
+  const previewBtn = qs("#pubOpenStudentPreview");
+
+  openPubBtn?.addEventListener("click", () => {
+    if (publishModal) publishModal.style.display = "flex";
+    if (successView) successView.style.display = "none";
+  });
+
+  closePubBtn?.addEventListener("click", () => {
+    if (publishModal) publishModal.style.display = "none";
+  });
+
+  publishForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const coachingName = qs("#pubCoachingName")?.value.trim() || "Institute";
+    const examTitle = qs("#pubExamTitle")?.value.trim() || "Online Exam";
+    const duration = Number(qs("#pubDuration")?.value || 60);
+
+    const payload = {
+      coaching_name: coachingName,
+      exam_title: examTitle,
+      duration_minutes: duration,
+    };
+
+    try {
+      showToast("Publishing exam...", "info", 1500);
+      let shareUrl = "";
+      let waUrl = "";
+
+      try {
+        const res = await postJson("/exam/admin/publish-coaching-exam", payload);
+        shareUrl = res.shareable_url;
+        waUrl = res.whatsapp_share_url;
+      } catch {
+        // Fallback dynamic URL generation
+        const base = window.location.origin;
+        const qParams = new URLSearchParams({
+          coaching: coachingName,
+          exam: examTitle,
+          duration: String(duration),
+        });
+        shareUrl = `${base}/src/pages/exam.html?${qParams.toString()}`;
+        const waMsg = `📝 *Online Proctored Exam*\n🏛️ *Institute:* ${coachingName}\n📚 *Exam:* ${examTitle}\n⏱️ *Duration:* ${duration} mins\n\n👉 *Exam Link:* ${shareUrl}\n\n⚠️ Fullscreen & camera proctoring enforced.`;
+        waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waMsg)}`;
+      }
+
+      if (shareableInput) shareableInput.value = shareUrl;
+      if (whatsappBtn) whatsappBtn.href = waUrl;
+      if (previewBtn) previewBtn.href = shareUrl;
+      if (successView) successView.style.display = "block";
+
+      showToast("🚀 Exam published! Copy link or share on WhatsApp.", "success", 4000);
+    } catch (err) {
+      showToast(err.message, "warning");
+    }
+  });
+
+  copyBtn?.addEventListener("click", async () => {
+    if (shareableInput) {
+      try {
+        await navigator.clipboard.writeText(shareableInput.value);
+        showToast("📋 Shareable exam link copied to clipboard!", "success");
+      } catch {
+        shareableInput.select();
+        document.execCommand("copy");
+        showToast("📋 Link copied!", "success");
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// DYNAMIC ANTI-LEAK SECURITY WATERMARK & CANDIDATE ONBOARDING
+// ---------------------------------------------------------------------------
+
+let watermarkInterval = null;
+
+function initExamWatermark(studentName, rollNo, coachingName) {
+  const overlay = qs("#examWatermarkOverlay");
+  if (!overlay) return;
+
+  studentName = studentName || localStorage.getItem("examguard_student_name") || "Student";
+  rollNo = rollNo || localStorage.getItem("examguard_roll_no") || "ROLL-XX";
+  coachingName = coachingName || localStorage.getItem("examguard_coaching_name") || "ExamGuard AI";
+
+  function renderWatermark() {
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const textLabel = `${studentName} • ${rollNo} • ${coachingName} • ${timeStr}`;
+
+    // 1. Populate visible grid units across the viewport
+    const cols = Math.ceil(window.innerWidth / 300);
+    const rows = Math.ceil(window.innerHeight / 180);
+    const totalChips = Math.min(cols * rows, 36);
+
+    let html = "";
+    for (let i = 0; i < totalChips; i++) {
+      html += `<div class="watermark-unit">${escapeHtml(textLabel)}</div>`;
+    }
+    overlay.innerHTML = html;
+
+    // 2. High-Resolution Canvas Pattern for tamper-proof background
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 380;
+      canvas.height = 200;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.rotate((-22 * Math.PI) / 180);
+        ctx.font = "bold 13px 'JetBrains Mono', monospace";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.11)";
+        ctx.fillText(`${studentName} • ${rollNo}`, 20, 110);
+        ctx.fillText(`${coachingName} • ${timeStr}`, 20, 135);
+        overlay.style.backgroundImage = `url(${canvas.toDataURL()})`;
+        overlay.style.backgroundRepeat = "repeat";
+      }
+    } catch {}
+  }
+
+  renderWatermark();
+  if (watermarkInterval) clearInterval(watermarkInterval);
+  watermarkInterval = setInterval(renderWatermark, 60000); // Live timestamp refresh
+  window.addEventListener("resize", renderWatermark);
+}
+
+function wireCoachingStudentGate() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const coachingParam = urlParams.get("coaching");
+  const examParam = urlParams.get("exam");
+  const gate = qs("#coachingStudentGate");
+
+  if (!coachingParam && !examParam) {
+    // If not a coaching exam URL, but student details are saved, init watermark with defaults
+    const savedName = localStorage.getItem("examguard_student_name");
+    const savedRoll = localStorage.getItem("examguard_roll_no");
+    if (savedName && savedRoll) {
+      initExamWatermark(savedName, savedRoll, "ExamGuard AI");
+    }
+    return;
+  }
+
+  const coachingName = coachingParam || "Institute";
+  const examTitle = examParam || "Proctored Examination";
+
+  localStorage.setItem("examguard_coaching_name", coachingName);
+  document.title = `${examTitle} | ${coachingName} - ExamGuard AI`;
+
+  // Update topbar header brand with coaching name
+  const brandEl = qs(".brand");
+  if (brandEl) {
+    brandEl.textContent = `${coachingName} • ${examTitle}`;
+  }
+
+  const savedName = localStorage.getItem("examguard_student_name");
+  const savedRoll = localStorage.getItem("examguard_roll_no");
+
+  if (savedName && savedRoll && getToken()) {
+    // Already registered & authenticated
+    if (gate) gate.style.display = "none";
+    initExamWatermark(savedName, savedRoll, coachingName);
+    loadQuestions();
+    return;
+  }
+
+  // Show Candidate Self-Registration Gate
+  if (gate) {
+    gate.style.display = "flex";
+    const badge = qs("#gateCoachingBadge");
+    const title = qs("#gateExamTitle");
+    if (badge) badge.textContent = `🏛️ ${coachingName}`;
+    if (title) title.textContent = examTitle;
+
+    const form = qs("#coachingCandidateForm");
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = qs("#coachingStudentName")?.value.trim();
+      const roll = qs("#coachingStudentRoll")?.value.trim();
+      const contact = qs("#coachingStudentContact")?.value.trim() || "";
+
+      if (!name || !roll) {
+        alert("Please enter both your Full Name and Roll Number.");
+        return;
+      }
+
+      try {
+        const res = await postJson("/auth/coaching-candidate-onboard", {
+          name,
+          roll_no: roll,
+          contact,
+          coaching_name: coachingName,
+          exam_id: urlParams.get("exam_id") || "",
+        });
+
+        localStorage.setItem("examguard_token", res.access_token);
+        localStorage.setItem("token", res.access_token);
+        localStorage.setItem("examguard_student_name", name);
+        localStorage.setItem("examguard_roll_no", roll);
+        localStorage.setItem("examguard_session_id", String(res.session_id));
+
+        gate.style.display = "none";
+        initExamWatermark(name, roll, coachingName);
+        showToast(`Welcome, ${name}! Assessment initialized.`, "success", 3000);
+        loadQuestions();
+      } catch (err) {
+        // Fallback local onboarding if server is sleeping
+        localStorage.setItem("examguard_token", `offline_token_${roll}`);
+        localStorage.setItem("examguard_student_name", name);
+        localStorage.setItem("examguard_roll_no", roll);
+        gate.style.display = "none";
+        initExamWatermark(name, roll, coachingName);
+        loadQuestions();
+      }
+    });
+  }
+}
+
+
 async function initializeAdminDashboard() {
   if (!qs("#adminLoginForm") && !qs("#adminDashboardContent")) return;
   const token = getToken();
@@ -1845,6 +2331,7 @@ async function initializeAdminDashboard() {
   if (content) content.style.display = "block";
 
   qs("#createMcqForm")?.addEventListener("submit", handleCreateMcq);
+  wireMcqStudio();
 
   await Promise.all([
     loadStudentsList(),
@@ -1876,6 +2363,8 @@ async function initializeStudentAccess() {
     await startInviteExam();
     return;
   }
+
+  wireCoachingStudentGate();
 
   if (isQuestionExamPage) {
     await loadQuestions();

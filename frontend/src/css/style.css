@@ -2975,3 +2975,89 @@ tr:hover td {
     padding: 10px 14px !important;
   }
 }
+
+/* ==========================================================================
+   DYNAMIC ANTI-LEAK SECURITY WATERMARK & COACHING ONBOARDING STYLES
+   ========================================================================== */
+.exam-watermark-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+  opacity: 0.85;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 60px 40px;
+  padding: 40px;
+  align-items: center;
+  justify-items: center;
+}
+
+.watermark-unit {
+  transform: rotate(-24deg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.14);
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* MCQ Studio Sub-Tabs */
+.mcq-studio-nav {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+
+.mcq-subtab-btn {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mcq-subtab-btn:hover {
+  border-color: rgba(0, 242, 254, 0.4);
+  color: #fff;
+}
+
+.mcq-subtab-btn.active {
+  background: rgba(0, 242, 254, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+}
+
+.mcq-import-view {
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.template-download-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.template-download-strip span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+

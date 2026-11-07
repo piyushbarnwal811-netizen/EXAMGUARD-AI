@@ -113,3 +113,37 @@ class TrackingEvent(BaseModel):
                 f"event_type must be one of: {', '.join(sorted(ALLOWED_TRACKING_EVENTS))}"
             )
         return normalized
+
+
+class BulkQuestionImportResult(BaseModel):
+    status: str
+    imported_count: int
+    skipped_count: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
+class GenerateAiMcqsRequest(BaseModel):
+    topic: str = Field(..., min_length=2, max_length=150)
+    count: int = Field(default=5, ge=1, le=30)
+    difficulty: str = Field(default="Medium")
+    save_immediately: bool = Field(default=False)
+
+
+class PublishCoachingExamRequest(BaseModel):
+    coaching_name: str = Field(..., min_length=2, max_length=120)
+    exam_title: str = Field(..., min_length=2, max_length=160)
+    duration_minutes: int = Field(default=60, ge=5, le=360)
+    instructions: str | None = Field(default=None, max_length=2000)
+    total_marks: int | None = Field(default=None)
+
+
+class PublishCoachingExamResponse(BaseModel):
+    status: str
+    slug: str
+    coaching_name: str
+    exam_title: str
+    duration_minutes: int
+    shareable_url: str
+    whatsapp_share_url: str
+
+
