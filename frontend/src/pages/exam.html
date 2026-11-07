@@ -375,6 +375,13 @@
     <!-- Client SEB & PIP Enhancer Script -->
     <script>
 (function(){
+  // If this is a coaching MCQ exam, redirect immediately to the mobile-optimized interface
+  const coachingParam = new URLSearchParams(location.search).get("coaching");
+  if (coachingParam) {
+    window.location.replace("mcq-exam.html" + location.search);
+    return;
+  }
+
   const API = (localStorage.getItem("examguard_api_base") || "https://examguard-ai-317p.onrender.com/api").replace(/\/$/,"");
   const token = new URLSearchParams(location.search).get("token") || new URLSearchParams(location.search).get("invite") || "";
   const gate = document.getElementById("sebGate");

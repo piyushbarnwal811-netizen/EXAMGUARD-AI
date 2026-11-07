@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Online Proctored Assessment | ExamGuard AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../css/style.css" />
+    <style>
+      :root {
+        --mcq-bg: #070b14;
+        --card-bg: rgba(15, 23, 42, 0.95);
+        --accent: #00f2fe;
+        --accent-glow: rgba(0, 242, 254, 0.25);
+        --success: #00e676;
+        --warning: #ff4b5c;
+        --marked: #f59e0b;
+      }
+      body.mcq-exam-body {
+        margin: 0;
+        padding: 0;
+        background: var(--mcq-bg);
+        color: #f8fafc;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        user-select: none;
+        -webkit-user-select: none;
+        overflow-x: hidden;
+      }
+      /* Dynamic Watermark Overlay */
+      .mcq-watermark-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 9990;
+        pointer-events: none;
+        user-select: none;
+        overflow: hidden;
+        opacity: 0.16;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 50px 30px;
+        padding: 24px;
+        align-items: center;
+        justify-items: center;
+      }
+      .mcq-watermark-text {
+        transform: rotate(-22deg);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 700;
+        color: #ffffff;
+        white-space: nowrap;
+        text-shadow: 0 0 2px rgba(0,0,0,0.8);
+      }
+      /* Sticky Topbar */
+      .mcq-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        background: rgba(7, 11, 20, 0.92);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .coaching-brand-cluster {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .coaching-badge-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.2));
+        border: 1px solid rgba(0, 242, 254, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+      }
+      .coaching-meta-text {
+        min-width: 0;
+      }
+      .coaching-name-title {
+        font-size: 0.88rem;
+        font-weight: 800;
+        color: #fff;
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .coaching-exam-sub {
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .timer-pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(0, 242, 254, 0.3);
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--accent);
+        flex-shrink: 0;
+        box-shadow: 0 0 12px rgba(0, 242, 254, 0.15);
+      }
+      .timer-pill.urgent {
+        border-color: var(--warning);
+        color: #ff4b5c;
+        animation: pulseWarning 1.2s infinite;
+      }
+      @keyframes pulseWarning {
+        0%, 100% { box-shadow: 0 0 8px rgba(255, 75, 92, 0.3); }
+        50% { box-shadow: 0 0 20px rgba(255, 75, 92, 0.6); }
+      }
+      /* Main Content Container */
+      .mcq-main-content {
+        flex: 1;
+        max-width: 800px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 16px 16px 90px;
+      }
+      /* Question Progress Bar */
+      .mcq-nav-strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        padding: 8px 12px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .q-index-badge {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn-palette-toggle {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--line);
+        color: #cbd5e1;
+        border-radius: 6px;
+        padding: 5px 10px;
+        font-size: 0.74rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      /* Question Statement Card */
+      .question-card {
+        background: var(--card-bg);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 22px 20px;
+        margin-bottom: 18px;
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      }
+      .question-statement-text {
+        font-size: 1.05rem;
+        font-weight: 600;
+        line-height: 1.6;
+        color: #ffffff;
+        margin: 0;
+        white-space: pre-wrap;
+      }
+      /* Big Touch-Friendly Options */
+      .options-stack {
+        display: grid;
+        gap: 12px;
+      }
+      .option-choice-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1.5px solid rgba(255, 255, 255, 0.09);
+        border-radius: 12px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .option-choice-card:hover {
+        border-color: rgba(0, 242, 254, 0.4);
+        background: rgba(15, 23, 42, 0.9);
+      }
+      .option-choice-card.selected {
+        background: rgba(0, 242, 254, 0.12);
+        border-color: var(--accent);
+        box-shadow: 0 0 18px rgba(0, 242, 254, 0.25);
+      }
+      .option-key-badge {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: #cbd5e1;
+        flex-shrink: 0;
+      }
+      .option-choice-card.selected .option-key-badge {
+        background: var(--accent);
+        color: #070b14;
+        border-color: var(--accent);
+      }
+      .option-text-content {
+        font-size: 0.95rem;
+        line-height: 1.45;
+        color: #e2e8f0;
+        flex: 1;
+      }
+      /* Fixed Bottom Mobile Action Bar */
+      .mcq-bottom-dock {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background: rgba(7, 11, 20, 0.95);
+        backdrop-filter: blur(16px);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.6);
+      }
+      .mcq-bottom-dock .btn-action {
+        flex: 1;
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border: none;
+        transition: transform 0.1s ease;
+      }
+      .mcq-bottom-dock .btn-action:active {
+        transform: scale(0.97);
+      }
+      .btn-prev-q {
+        background: rgba(30, 41, 59, 0.8);
+        color: #cbd5e1;
+        border: 1px solid var(--line);
+      }
+      .btn-mark-q {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.4);
+        color: #f59e0b;
+        max-width: 130px;
+      }
+      .btn-next-q {
+        background: linear-gradient(135deg, #0284c7, #06b6d4);
+        color: #fff;
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+      }
+      .btn-submit-q {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: #fff;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+      }
+      /* Slide-up Palette Drawer */
+      .palette-drawer-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(8px);
+        display: none;
+        align-items: flex-end;
+        justify-content: center;
+      }
+      .palette-drawer-body {
+        background: #0f172a;
+        border-top: 1px solid rgba(0, 242, 254, 0.3);
+        border-radius: 20px 20px 0 0;
+        max-width: 600px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 20px 18px 30px;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+      }
+      .palette-grid-items {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin: 16px 0;
+      }
+      .palette-num-btn {
+        height: 44px;
+        border-radius: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 700;
+        font-size: 0.88rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.06);
+        color: #cbd5e1;
+        cursor: pointer;
+      }
+      .palette-num-btn.answered {
+        background: rgba(16, 185, 129, 0.25);
+        border-color: #10b981;
+        color: #34d399;
+      }
+      .palette-num-btn.marked {
+        background: rgba(245, 158, 11, 0.25);
+        border-color: #f59e0b;
+        color: #fbbf24;
+      }
+      .palette-num-btn.current {
+        border-color: var(--accent);
+        box-shadow: 0 0 10px var(--accent);
+      }
+      /* Floating Minimal Camera Preview */
+      .mcq-floating-camera {
+        position: fixed;
+        bottom: 74px;
+        right: 14px;
+        z-index: 1001;
+        width: 88px;
+        height: 88px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1.5px solid rgba(0, 242, 254, 0.5);
+        background: #020617;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+        transition: transform 0.2s ease;
+      }
+      .mcq-floating-camera video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .mcq-floating-camera.minimized {
+        transform: scale(0.35);
+        transform-origin: bottom right;
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+  <body class="mcq-exam-body">
+    <!-- Dynamic Anti-Leak Security Watermark (Always Stamped Across Viewport) -->
+    <div id="examWatermarkOverlay" class="mcq-watermark-layer" aria-hidden="true"></div>
+
+    <!-- 1. STUDENT ONBOARDING GATE (Visible when opening link) -->
+    <div id="onboardingGate" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;position:relative;z-index:10001;">
+      <section class="modal exam-hero-card" style="max-width:480px;width:100%;text-align:center;padding:32px 24px;border:1px solid rgba(0,242,254,0.3);box-shadow:0 0 50px rgba(0,242,254,0.15);">
+        <div class="hero-shield-badge" id="gateCoachingBadge">🏛️ Institute Assessment Portal</div>
+        <h1 class="gradient-title" id="gateExamTitle" style="font-size:1.8rem;margin:16px 0 8px;">Online Examination</h1>
+        <p class="muted" id="gateSubtitle" style="font-size:0.88rem;line-height:1.5;margin-bottom:24px;">
+          Please enter your credentials below. Your session will be watermarked and proctored.
+        </p>
+
+        <form id="onboardingForm" style="text-align:left;display:grid;gap:14px;">
+          <label>
+            <span style="font-size:0.8rem;font-weight:700;color:#fff;">Student Full Name <span style="color:#ff4b5c;">*</span></span>
+            <input type="text" id="inputStudentName" required placeholder="e.g. Rahul Kumar" style="width:100%;padding:13px;border-radius:10px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:0.95rem;" />
+          </label>
+
+          <label>
+            <span style="font-size:0.8rem;font-weight:700;color:#fff;">Roll Number / Student ID <span style="color:#ff4b5c;">*</span></span>
+            <input type="text" id="inputStudentRoll" required placeholder="e.g. APEX-2026-104" style="width:100%;padding:13px;border-radius:10px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.12);color:#fff;font-family:'JetBrains Mono',monospace;font-size:0.95rem;" />
+          </label>
+
+          <label>
+            <span style="font-size:0.8rem;font-weight:700;color:var(--muted);">Mobile Number / Email (Optional)</span>
+            <input type="text" id="inputStudentContact" placeholder="e.g. 9876543210" style="width:100%;padding:13px;border-radius:10px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.12);color:#fff;font-size:0.95rem;" />
+          </label>
+
+          <div style="background:rgba(0,242,254,0.06);border:1px solid rgba(0,242,254,0.2);border-radius:10px;padding:12px;font-size:0.75rem;color:#cbd5e1;line-height:1.45;">
+            🔒 <strong>Exam Security Active:</strong> Your Name and Roll Number will be stamped as a live security watermark across the exam. Tab-switching and camera obscuring are strictly logged.
+          </div>
+
+          <button type="submit" class="btn-glow" style="width:100%;padding:15px;font-size:1.02rem;margin-top:6px;">
+            🚀 Start Proctored Exam
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <!-- 2. ACTIVE OBJECTIVE EXAM INTERFACE (Shown after onboarding) -->
+    <div id="activeExamSection" style="display:none;flex-direction:column;flex:1;">
+      <!-- Sticky Topbar -->
+      <header class="mcq-topbar">
+        <div class="coaching-brand-cluster">
+          <div class="coaching-badge-icon">🏛️</div>
+          <div class="coaching-meta-text">
+            <h2 class="coaching-name-title" id="topbarCoachingName">Institute Name</h2>
+            <p class="coaching-exam-sub" id="topbarExamTitle">Objective Assessment</p>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="timer-pill" id="examTimerBadge">
+            <span>⏳</span>
+            <span id="examTimerDisplay">60:00</span>
+          </div>
+          <button type="button" id="btnFullscreenToggle" style="background:rgba(255,255,255,0.08);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:#fff;font-size:0.8rem;cursor:pointer;">
+            ⛶
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Question & Options Workspace -->
+      <main class="mcq-main-content">
+        <!-- Question Meta & Palette Opener -->
+        <div class="mcq-nav-strip">
+          <div class="q-index-badge">
+            <span>📝</span>
+            <span id="qIndexLabel">Question 1 of 1</span>
+          </div>
+          <button type="button" id="btnOpenPalette" class="btn-palette-toggle">
+            <span>📋 Question Grid</span>
+          </button>
+        </div>
+
+        <!-- Question Card -->
+        <article class="question-card">
+          <h3 class="question-statement-text" id="questionStatement">Loading question...</h3>
+        </article>
+
+        <!-- Options A, B, C, D -->
+        <div class="options-stack" id="optionsContainer">
+          <!-- Dynamically Injected Options -->
+        </div>
+      </main>
+
+      <!-- Fixed Bottom Action Bar (Thumb Reach) -->
+      <footer class="mcq-bottom-dock">
+        <button type="button" class="btn-action btn-prev-q" id="btnPrev">
+          <span>⬅ Prev</span>
+        </button>
+        <button type="button" class="btn-action btn-mark-q" id="btnMark">
+          <span>🔖 Review</span>
+        </button>
+        <button type="button" class="btn-action btn-next-q" id="btnNext">
+          <span>Next ➡</span>
+        </button>
+        <button type="button" class="btn-action btn-submit-q" id="btnFinish">
+          <span>🏁 Submit</span>
+        </button>
+      </footer>
+    </div>
+
+    <!-- 3. SLIDE-UP QUESTION PALETTE DRAWER -->
+    <div id="paletteDrawer" class="palette-drawer-sheet">
+      <div class="palette-drawer-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:12px;">
+          <h3 style="margin:0;font-size:1.05rem;color:#fff;">Question Palette</h3>
+          <button type="button" id="btnClosePalette" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">✕</button>
+        </div>
+
+        <div style="display:flex;gap:12px;margin:12px 0;font-size:0.75rem;color:#cbd5e1;flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#10b981;"></span> Answered</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:#f59e0b;"></span> Marked</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,0.2);"></span> Unanswered</span>
+        </div>
+
+        <div class="palette-grid-items" id="paletteGrid"></div>
+      </div>
+    </div>
+
+    <!-- 4. FLOATING WEBCAM PIP -->
+    <div class="mcq-floating-camera" id="floatingCameraBox">
+      <video id="cameraPreview" autoplay muted playsinline></video>
+    </div>
+
+    <!-- 5. SUBMISSION SUMMARY MODAL -->
+    <div id="submissionModal" class="palette-drawer-sheet">
+      <div class="palette-drawer-body" style="border-radius:18px;max-width:440px;margin:auto;">
+        <div style="text-align:center;padding:10px 0;">
+          <div style="font-size:36px;margin-bottom:8px;">🏁</div>
+          <h3 style="margin:0 0 6px;color:#fff;font-size:1.3rem;">Finalize Assessment?</h3>
+          <p class="muted" style="font-size:0.85rem;margin:0 0 18px;">Once submitted, your answers will be securely archived.</p>
+
+          <div style="background:rgba(15,23,42,0.8);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:20px;text-align:left;display:grid;gap:8px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;">
+              <span class="muted">Total Questions:</span>
+              <strong id="summaryTotal">0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#34d399;">
+              <span>Answered:</span>
+              <strong id="summaryAnswered">0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#fbbf24;">
+              <span>Marked for Review:</span>
+              <strong id="summaryMarked">0</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#f87171;">
+              <span>Unanswered:</span>
+              <strong id="summaryUnanswered">0</strong>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;">
+            <button type="button" id="btnCancelSubmit" class="btn-action btn-prev-q" style="flex:1;padding:13px;border-radius:10px;">
+              Keep Answering
+            </button>
+            <button type="button" id="btnConfirmSubmit" class="btn-action btn-submit-q" style="flex:1;padding:13px;border-radius:10px;">
+              Confirm Submit
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script src="../js/tracking.js"></script>
+    <script src="../js/camera.js"></script>
+    <script src="../js/mobile_lockdown.js"></script>
+    <script src="../js/invigilator_client.js"></script>
+
+    <script>
+      (function () {
+        const query = new URLSearchParams(window.location.search);
+        const coachingName = query.get("coaching") || "Institute";
+        const examTitle = query.get("exam") || "Objective Assessment";
+        const durationMins = parseInt(query.get("duration") || "60", 10);
+        const examId = query.get("exam_id") || "exam_default";
+
+        let studentName = localStorage.getItem("examguard_student_name") || "";
+        let studentRoll = localStorage.getItem("examguard_roll_no") || "";
+
+        let questions = [];
+        let currentIndex = 0;
+        let selectedAnswers = {}; // { qId: "A" }
+        let markedForReview = new Set();
+        let remainingSeconds = durationMins * 60;
+        let timerInterval = null;
+
+        // Elements
+        const onboardingGate = document.getElementById("onboardingGate");
+        const activeExamSection = document.getElementById("activeExamSection");
+        const onboardingForm = document.getElementById("onboardingForm");
+        const gateCoachingBadge = document.getElementById("gateCoachingBadge");
+        const gateExamTitle = document.getElementById("gateExamTitle");
+        const topbarCoachingName = document.getElementById("topbarCoachingName");
+        const topbarExamTitle = document.getElementById("topbarExamTitle");
+        const examTimerDisplay = document.getElementById("examTimerDisplay");
+        const examTimerBadge = document.getElementById("examTimerBadge");
+        const qIndexLabel = document.getElementById("qIndexLabel");
+        const questionStatement = document.getElementById("questionStatement");
+        const optionsContainer = document.getElementById("optionsContainer");
+        const btnPrev = document.getElementById("btnPrev");
+        const btnNext = document.getElementById("btnNext");
+        const btnMark = document.getElementById("btnMark");
+        const btnFinish = document.getElementById("btnFinish");
+        const btnOpenPalette = document.getElementById("btnOpenPalette");
+        const paletteDrawer = document.getElementById("paletteDrawer");
+        const btnClosePalette = document.getElementById("btnClosePalette");
+        const paletteGrid = document.getElementById("paletteGrid");
+        const submissionModal = document.getElementById("submissionModal");
+        const btnCancelSubmit = document.getElementById("btnCancelSubmit");
+        const btnConfirmSubmit = document.getElementById("btnConfirmSubmit");
+        const btnFullscreenToggle = document.getElementById("btnFullscreenToggle");
+
+        // Set coaching names
+        gateCoachingBadge.textContent = "🏛️ " + coachingName;
+        gateExamTitle.textContent = examTitle;
+        topbarCoachingName.textContent = coachingName;
+        topbarExamTitle.textContent = examTitle;
+        document.title = `${examTitle} | ${coachingName}`;
+
+        // Initialize Dynamic Anti-Leak Watermark
+        function updateWatermark(name, roll, coaching) {
+          const overlay = document.getElementById("examWatermarkOverlay");
+          if (!overlay) return;
+          const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const watermarkString = `${name} • ${roll} • ${coaching} • ${time}`;
+
+          const count = Math.min(Math.ceil((window.innerWidth * window.innerHeight) / 35000), 30);
+          let html = "";
+          for (let i = 0; i < count; i++) {
+            html += `<div class="mcq-watermark-text">${watermarkString}</div>`;
+          }
+          overlay.innerHTML = html;
+        }
+
+        // Onboarding Form Submit
+        onboardingForm.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          studentName = document.getElementById("inputStudentName").value.trim();
+          studentRoll = document.getElementById("inputStudentRoll").value.trim();
+          const contact = document.getElementById("inputStudentContact").value.trim();
+
+          if (!studentName || !studentRoll) {
+            alert("Please enter both Name and Roll Number.");
+            return;
+          }
+
+          localStorage.setItem("examguard_student_name", studentName);
+          localStorage.setItem("examguard_roll_no", studentRoll);
+          localStorage.setItem("examguard_coaching_name", coachingName);
+
+          // Authenticate session with backend
+          try {
+            const apiBase = (localStorage.getItem("examguard_api_base") || "/api").replace(/\/$/, "");
+            const res = await fetch(`${apiBase}/auth/coaching-candidate-onboard`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: studentName,
+                roll_no: studentRoll,
+                contact: contact,
+                coaching_name: coachingName,
+                exam_id: examId,
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              localStorage.setItem("examguard_token", data.access_token);
+              localStorage.setItem("examguard_session_id", String(data.session_id));
+            }
+          } catch (err) {
+            console.warn("Backend offline onboarding fallback", err);
+          }
+
+          startExam();
+        });
+
+        // Start Exam Flow
+        async function startExam() {
+          onboardingGate.style.display = "none";
+          activeExamSection.style.display = "flex";
+
+          updateWatermark(studentName, studentRoll, coachingName);
+          setInterval(() => updateWatermark(studentName, studentRoll, coachingName), 60000);
+
+          // Request screen wake lock so phone screen does not dim or sleep
+          if ("wakeLock" in navigator) {
+            try {
+              await navigator.wakeLock.request("screen");
+            } catch (e) {}
+          }
+
+          // Fullscreen request
+          try {
+            if (document.documentElement.requestFullscreen) {
+              await document.documentElement.requestFullscreen();
+            }
+          } catch (e) {}
+
+          // Start Camera Preview
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            const video = document.getElementById("cameraPreview");
+            if (video) video.srcObject = stream;
+          } catch (e) {
+            console.warn("Camera optional for student", e);
+          }
+
+          // Start Timer
+          startTimer();
+
+          // Fetch Questions
+          await fetchQuestions();
+        }
+
+        // Fetch Questions from API or fallback
+        async function fetchQuestions() {
+          try {
+            const apiBase = (localStorage.getItem("examguard_api_base") || "/api").replace(/\/$/, "");
+            const token = localStorage.getItem("examguard_token") || "";
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+            const res = await fetch(`${apiBase}/exam/questions`, { headers });
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.length) {
+                questions = data;
+                renderCurrentQuestion();
+                renderPalette();
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn("API questions failed, checking local samples", e);
+          }
+
+          // Sample questions fallback so exam NEVER breaks
+          questions = [
+            {
+              id: 1,
+              question: "Which data structure follows the LIFO (Last-In-First-Out) principle?",
+              options: ["Queue", "Stack", "Array", "Linked List"],
+            },
+            {
+              id: 2,
+              question: "What is the average time complexity of searching in a balanced Binary Search Tree?",
+              options: ["O(1)", "O(n)", "O(log n)", "O(n^2)"],
+            },
+            {
+              id: 3,
+              question: "Which of the following is volatile primary memory in a computer system?",
+              options: ["ROM", "Hard Disk Drive", "RAM", "SSD"],
+            },
+            {
+              id: 4,
+              question: "Which protocol is used for secure encrypted communication over the World Wide Web?",
+              options: ["HTTP", "FTP", "HTTPS", "SMTP"],
+            },
+            {
+              id: 5,
+              question: "Which SQL clause is used to filter records in a database query?",
+              options: ["ORDER BY", "WHERE", "GROUP BY", "SELECT"],
+            },
+          ];
+
+          renderCurrentQuestion();
+          renderPalette();
+        }
+
+        // Render Current Question
+        function renderCurrentQuestion() {
+          if (!questions.length) return;
+          const q = questions[currentIndex];
+          qIndexLabel.textContent = `Question ${currentIndex + 1} of ${questions.length}`;
+          questionStatement.textContent = q.question;
+
+          // Options A, B, C, D
+          const keys = ["A", "B", "C", "D"];
+          optionsContainer.innerHTML = q.options
+            .map((opt, idx) => {
+              const letter = keys[idx] || String.fromCharCode(65 + idx);
+              const isSelected = selectedAnswers[q.id] === letter;
+              return `
+                <div class="option-choice-card ${isSelected ? "selected" : ""}" data-option="${letter}">
+                  <div class="option-key-badge">${letter}</div>
+                  <div class="option-text-content">${opt}</div>
+                </div>
+              `;
+            })
+            .join("");
+
+          // Update Mark Review Button
+          const isMarked = markedForReview.has(q.id);
+          btnMark.style.background = isMarked ? "rgba(245, 158, 11, 0.35)" : "rgba(245, 158, 11, 0.15)";
+          btnMark.innerHTML = isMarked ? "<span>★ Marked</span>" : "<span>🔖 Review</span>";
+
+          // Disable Prev on first question
+          btnPrev.style.opacity = currentIndex === 0 ? "0.4" : "1";
+          btnPrev.disabled = currentIndex === 0;
+
+          // Update Next / Finish text
+          if (currentIndex === questions.length - 1) {
+            btnNext.style.display = "none";
+            btnFinish.style.display = "flex";
+          } else {
+            btnNext.style.display = "flex";
+            btnFinish.style.display = "none";
+          }
+
+          renderPalette();
+        }
+
+        // Option Selection Click
+        optionsContainer.addEventListener("click", function (e) {
+          const card = e.target.closest(".option-choice-card");
+          if (!card) return;
+          const letter = card.dataset.option;
+          const q = questions[currentIndex];
+          selectedAnswers[q.id] = letter;
+
+          // Haptic feedback if supported
+          if (navigator.vibrate) navigator.vibrate(25);
+
+          renderCurrentQuestion();
+        });
+
+        // Navigation Actions
+        btnPrev.addEventListener("click", () => {
+          if (currentIndex > 0) {
+            currentIndex--;
+            renderCurrentQuestion();
+          }
+        });
+
+        btnNext.addEventListener("click", () => {
+          if (currentIndex < questions.length - 1) {
+            currentIndex++;
+            renderCurrentQuestion();
+          }
+        });
+
+        btnMark.addEventListener("click", () => {
+          const q = questions[currentIndex];
+          if (markedForReview.has(q.id)) {
+            markedForReview.delete(q.id);
+          } else {
+            markedForReview.add(q.id);
+          }
+          renderCurrentQuestion();
+        });
+
+        // Question Palette Drawer
+        btnOpenPalette.addEventListener("click", () => {
+          paletteDrawer.style.display = "flex";
+        });
+        btnClosePalette.addEventListener("click", () => {
+          paletteDrawer.style.display = "none";
+        });
+        paletteDrawer.addEventListener("click", (e) => {
+          if (e.target === paletteDrawer) paletteDrawer.style.display = "none";
+        });
+
+        function renderPalette() {
+          paletteGrid.innerHTML = questions
+            .map((q, idx) => {
+              const isAnswered = Boolean(selectedAnswers[q.id]);
+              const isMarked = markedForReview.has(q.id);
+              const isCurrent = idx === currentIndex;
+              let cls = "";
+              if (isMarked) cls = "marked";
+              else if (isAnswered) cls = "answered";
+              if (isCurrent) cls += " current";
+
+              return `<button type="button" class="palette-num-btn ${cls}" data-q-idx="${idx}">${idx + 1}</button>`;
+            })
+            .join("");
+
+          paletteGrid.querySelectorAll(".palette-num-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              currentIndex = parseInt(btn.dataset.qIdx, 10);
+              paletteDrawer.style.display = "none";
+              renderCurrentQuestion();
+            });
+          });
+        }
+
+        // Fullscreen Toggle
+        btnFullscreenToggle.addEventListener("click", () => {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            document.exitFullscreen().catch(() => {});
+          }
+        });
+
+        // Countdown Timer
+        function startTimer() {
+          function tick() {
+            if (remainingSeconds <= 0) {
+              clearInterval(timerInterval);
+              finalizeExam();
+              return;
+            }
+            remainingSeconds--;
+            const mins = Math.floor(remainingSeconds / 60);
+            const secs = remainingSeconds % 60;
+            examTimerDisplay.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+
+            if (remainingSeconds <= 300) {
+              examTimerBadge.classList.add("urgent");
+            }
+          }
+          tick();
+          timerInterval = setInterval(tick, 1000);
+        }
+
+        // Submission Dialog
+        btnFinish.addEventListener("click", () => {
+          const total = questions.length;
+          const answered = Object.keys(selectedAnswers).length;
+          const marked = markedForReview.size;
+          const unanswered = total - answered;
+
+          document.getElementById("summaryTotal").textContent = total;
+          document.getElementById("summaryAnswered").textContent = answered;
+          document.getElementById("summaryMarked").textContent = marked;
+          document.getElementById("summaryUnanswered").textContent = unanswered;
+
+          submissionModal.style.display = "flex";
+        });
+
+        btnCancelSubmit.addEventListener("click", () => {
+          submissionModal.style.display = "none";
+        });
+
+        btnConfirmSubmit.addEventListener("click", () => {
+          finalizeExam();
+        });
+
+        // Finalize Exam
+        function finalizeExam() {
+          clearInterval(timerInterval);
+          submissionModal.style.display = "none";
+          activeExamSection.style.display = "none";
+
+          const total = questions.length;
+          const answered = Object.keys(selectedAnswers).length;
+
+          // Replace body content with completion receipt
+          document.body.innerHTML = `
+            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
+              <div class="exam-hero-card" style="max-width:500px;width:100%;padding:40px 24px;border:1px solid rgba(0,230,118,0.4);box-shadow:0 0 50px rgba(0,230,118,0.2);">
+                <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+                <div class="hero-shield-badge" style="border-color:#10b981;color:#34d399;">Assessment Finalized</div>
+                <h1 style="font-size:1.8rem;margin:16px 0 8px;color:#fff;">Exam Submitted Successfully</h1>
+                <p class="muted" style="font-size:0.9rem;line-height:1.5;margin-bottom:24px;">
+                  Thank you, <strong>${studentName}</strong> (${studentRoll})!<br>
+                  Your proctored test responses have been securely uploaded to <strong>${coachingName}</strong>.
+                </p>
+                <div style="background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin-bottom:24px;font-size:0.9rem;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                    <span class="muted">Questions Answered:</span>
+                    <strong style="color:#34d399;">${answered} / ${total}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;">
+                    <span class="muted">Verification Status:</span>
+                    <strong style="color:#00f2fe;">Proctor Verified ✓</strong>
+                  </div>
+                </div>
+                <button type="button" onclick="window.close()" class="btn-glow" style="padding:14px 28px;width:100%;">
+                  Close Exam Window
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        // Tab Switch / Minimize Warning
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden && activeExamSection.style.display !== "none") {
+            alert("⚠️ WARNING: Tab switching or minimizing during the examination is strictly prohibited and logged!");
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -40,7 +40,8 @@ export default defineConfig({
         login: resolve(root, "src/pages/login.html"),
         admin: resolve(root, "src/pages/admin.html"),
         exam: resolve(root, "src/pages/exam.html"),
-        studentExam: resolve(root, "src/pages/student-exam.html"), // <-- YE LINE ADD KARO
+        studentExam: resolve(root, "src/pages/student-exam.html"),
+        mcqExam: resolve(root, "src/pages/mcq-exam.html"),
       },
     },
   },

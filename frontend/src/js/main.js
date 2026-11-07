@@ -2130,8 +2130,8 @@ function wireMcqStudio() {
 
       try {
         const res = await postJson("/exam/admin/publish-coaching-exam", payload);
-        shareUrl = res.shareable_url;
-        waUrl = res.whatsapp_share_url;
+        shareUrl = res.shareable_url.replace("exam.html", "mcq-exam.html");
+        waUrl = res.whatsapp_share_url.replace("exam.html", "mcq-exam.html");
       } catch {
         // Fallback dynamic URL generation
         const base = window.location.origin;
@@ -2140,8 +2140,8 @@ function wireMcqStudio() {
           exam: examTitle,
           duration: String(duration),
         });
-        shareUrl = `${base}/src/pages/exam.html?${qParams.toString()}`;
-        const waMsg = `📝 *Online Proctored Exam*\n🏛️ *Institute:* ${coachingName}\n📚 *Exam:* ${examTitle}\n⏱️ *Duration:* ${duration} mins\n\n👉 *Exam Link:* ${shareUrl}\n\n⚠️ Fullscreen & camera proctoring enforced.`;
+        shareUrl = `${base}/src/pages/mcq-exam.html?${qParams.toString()}`;
+        const waMsg = `📝 *Online Proctored Exam Announcement*\n🏛️ *Institute:* ${coachingName}\n📚 *Exam:* ${examTitle}\n⏱️ *Duration:* ${duration} Minutes\n📱 *Device:* 100% Mobile & PC Friendly\n\n👉 *Start Exam Here:* ${shareUrl}\n\n⚠️ *Instructions:* Open link, enter your Name & Roll Number to start. Screen lockdown and dynamic identity watermark are active.`;
         waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waMsg)}`;
       }
 

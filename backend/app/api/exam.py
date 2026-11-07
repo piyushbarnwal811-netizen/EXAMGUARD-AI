@@ -638,15 +638,16 @@ async def publish_coaching_exam(
         "duration": payload.duration_minutes,
         "exam_id": slug,
     })
-    shareable_url = f"{base_url}/src/pages/exam.html?{query_params}"
+    shareable_url = f"{base_url}/src/pages/mcq-exam.html?{query_params}"
 
     whatsapp_text = (
         f"📝 *Online Proctored Exam Announcement*\n"
         f"🏛️ *Institute:* {payload.coaching_name.strip()}\n"
         f"📚 *Exam:* {payload.exam_title.strip()}\n"
-        f"⏱️ *Duration:* {payload.duration_minutes} Minutes\n\n"
-        f"👉 *Exam Link:* {shareable_url}\n\n"
-        f"⚠️ *Important:* Please open in Chrome or Safe Exam Browser. Fullscreen & webcam proctoring will be enforced."
+        f"⏱️ *Duration:* {payload.duration_minutes} Minutes\n"
+        f"📱 *Device:* 100% Mobile & PC Friendly\n\n"
+        f"👉 *Start Exam Here:* {shareable_url}\n\n"
+        f"⚠️ *Instructions:* Open link, enter your Name & Roll Number to start. Screen lockdown and dynamic identity watermark are active."
     )
     whatsapp_share_url = f"https://api.whatsapp.com/send?text={urllib.parse.quote(whatsapp_text)}"
 
