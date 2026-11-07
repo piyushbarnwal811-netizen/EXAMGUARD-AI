@@ -5,7 +5,7 @@ import time
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 import re
-from typing import Iterable
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from app.config import get_settings
 
