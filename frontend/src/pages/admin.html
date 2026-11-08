@@ -644,10 +644,47 @@
 
         <!-- TAB 4: EXAM REPORTS & HISTORY -->
         <section class="admin-tab-content" id="tab-reports">
+          <!-- COACHING & MCQ CANDIDATES SUBMISSIONS CARD -->
+          <div class="card wide-card" style="margin-bottom: 24px;">
+            <div class="panel-head" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
+              <div>
+                <div class="hero-shield-badge">📝 Live Assessment Results</div>
+                <h2 style="margin:8px 0 4px;">Candidate Submissions &amp; Scores (<span id="coachingSubmissionsCount">0</span>)</h2>
+                <p class="muted">Live list of students who completed or are taking the exam via coaching link, with their exact scores and submit timestamps.</p>
+              </div>
+              <div class="actions compact-actions">
+                <button type="button" class="button-secondary btn-sm" id="btnRefreshCoachingSubmissions">
+                  🔄 Refresh Submissions
+                </button>
+              </div>
+            </div>
+
+            <div class="table-responsive" style="margin-top: 18px;">
+              <table class="modern-table">
+                <thead>
+                  <tr>
+                    <th>Roll No</th>
+                    <th>Candidate Name</th>
+                    <th>Coaching / Batch</th>
+                    <th>Score (Correct / Total)</th>
+                    <th>Percentage</th>
+                    <th>Status</th>
+                    <th>Submitted At</th>
+                  </tr>
+                </thead>
+                <tbody id="coachingSubmissionsTableBody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: var(--muted); padding: 24px;">Loading candidate submissions...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div class="card wide-card">
             <div class="panel-head">
               <div>
-                <h2>Exam History &amp; Integrity Reports</h2>
+                <h2>Coding Contest History &amp; Integrity Reports</h2>
                 <p class="muted">Download comprehensive Excel reports containing candidate scores, proctoring violation logs, and test case results.</p>
               </div>
               <div class="actions compact-actions">

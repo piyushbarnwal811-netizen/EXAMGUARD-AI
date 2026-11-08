@@ -5,7 +5,8 @@ import os
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response as FastApiResponse
 from fastapi.concurrency import run_in_threadpool
 import pandas as pd
 from sqlalchemy import delete, select
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.security import require_admin, require_student
-from app.db.models import ExamLog, ExamSession, Question, Response
+from app.db.models import ExamLog, ExamSession, Question, Response, Student
 from app.db.session import get_db
 from app.schemas.exam import (
     AnswerSubmit,
@@ -460,7 +461,7 @@ async def download_question_template(
     if format.lower() == "csv":
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
-        return Response(
+        return FastApiResponse(
             content=csv_buffer.getvalue(),
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="mcq_questions_template.csv"'},
@@ -469,7 +470,7 @@ async def download_question_template(
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="MCQs")
-        return Response(
+        return FastApiResponse(
             content=out.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": 'attachment; filename="mcq_questions_template.xlsx"'},
@@ -669,6 +670,58 @@ async def get_published_coaching_exam(slug: str):
     if not data:
         raise HTTPException(status_code=404, detail="Coaching exam link not found or expired.")
     return data
+
+
+@router.get("/admin/coaching-submissions")
+async def list_coaching_submissions(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+):
+    """Lists all candidate submissions for objective/coaching assessments with their score and status."""
+    students = (await db.execute(select(Student).order_by(Student.id.desc()))).scalars().all()
+    questions = (await db.execute(select(Question))).scalars().all()
+    q_map = {q.id: q.correct_option for q in questions}
+    total_questions = len(questions)
+
+    records = []
+    for s in students:
+        session_res = await db.execute(
+            select(ExamSession).where(ExamSession.student_id == s.id).order_by(ExamSession.start_time.desc())
+        )
+        session = session_res.scalars().first()
+
+        resp_res = await db.execute(
+            select(Response).where(Response.student_id == s.id)
+        )
+        responses = resp_res.scalars().all()
+        answered = len(responses)
+        correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
+
+        is_completed = (session is not None and session.end_time is not None) or answered > 0
+        started_at = (
+            session.start_time.isoformat()
+            if session and session.start_time
+            else (s.created_at.isoformat() if s.created_at else None)
+        )
+        submitted_at = session.end_time.isoformat() if session and session.end_time else None
+
+        records.append({
+            "student_id": s.id,
+            "name": s.name,
+            "roll_no": s.roll_no or "N/A",
+            "email": s.email,
+            "coaching_name": (session.location if session and session.location else "Direct Online Portal"),
+            "total_questions": total_questions,
+            "answered_count": answered,
+            "correct_count": correct,
+            "score_percentage": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
+            "status": "Completed" if is_completed else "In Progress",
+            "started_at": started_at,
+            "submitted_at": submitted_at,
+        })
+
+    return records
+
 
 
 

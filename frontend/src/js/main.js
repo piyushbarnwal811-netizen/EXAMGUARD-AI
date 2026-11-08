@@ -990,6 +990,61 @@ async function loadExamHistory() {
   }
 }
 
+async function loadCoachingSubmissions() {
+  const tbody = qs("#coachingSubmissionsTableBody");
+  const countEl = qs("#coachingSubmissionsCount");
+  if (!tbody || !getToken()) return;
+
+  try {
+    const list = await getJson("/exam/admin/coaching-submissions");
+    const submissions = Array.isArray(list) ? list : [];
+    if (countEl) countEl.textContent = submissions.length;
+
+    if (!submissions.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--muted); padding: 32px;">
+            No candidate submissions yet. As students take the exam from their mobile links, their names and scores will appear here in real-time.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = submissions
+      .map((item) => {
+        const isCompleted = item.status === "Completed";
+        const statusBadge = isCompleted
+          ? `<span class="status-tag sent"><span class="status-tag-dot"></span>Completed</span>`
+          : `<span class="status-tag pending"><span class="status-tag-dot"></span>In Progress</span>`;
+
+        const scoreText = item.total_questions > 0
+          ? `<strong>${item.correct_count}</strong> / ${item.total_questions} Correct`
+          : `${item.answered_count} Answered`;
+
+        const pctText = item.total_questions > 0 ? `${item.score_percentage}%` : "-";
+        const dateText = item.submitted_at
+          ? formatDateTime(item.submitted_at)
+          : (item.started_at ? formatDateTime(item.started_at) : "Just now");
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(item.roll_no)}</strong></td>
+            <td style="color:#fff;font-weight:600;">${escapeHtml(item.name)}</td>
+            <td><span class="format-chip" style="color:#00f2fe;">${escapeHtml(item.coaching_name)}</span></td>
+            <td>${scoreText}</td>
+            <td><strong style="color:${item.score_percentage >= 50 ? '#34d399' : '#f59e0b'};">${pctText}</strong></td>
+            <td>${statusBadge}</td>
+            <td class="muted" style="font-size:0.82rem;">${escapeHtml(dateText)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  } catch (error) {
+    console.warn("Failed to load coaching submissions", error);
+  }
+}
+
 async function generatePins() {
   try {
     const data = await postJson("/admin/generate-pins", {});
@@ -2340,7 +2395,16 @@ async function initializeAdminDashboard() {
     loadCodingProblem(),
     loadExamHistory(),
     loadAdminMcqs(),
+    loadCoachingSubmissions(),
   ]);
+
+  // Periodic auto-refresh for live candidate submissions
+  if (!window._coachingSubmissionsPoller) {
+    window._coachingSubmissionsPoller = setInterval(() => {
+      loadCoachingSubmissions();
+      loadStudentsList();
+    }, 20000);
+  }
 }
 
 
@@ -2458,6 +2522,10 @@ document.addEventListener("DOMContentLoaded", () => {
   qs("[data-send-test-email]")?.addEventListener("click", sendTestEmail);
   qs("[data-download-report]")?.addEventListener("click", () => downloadReport());
   qs("[data-refresh-exam-history]")?.addEventListener("click", loadExamHistory);
+  qs("#btnRefreshCoachingSubmissions")?.addEventListener("click", () => {
+    loadCoachingSubmissions();
+    showToast("Submissions refreshed!", "info", 1500);
+  });
   qs("[data-exam-history]")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-download-exam-report]");
     if (!button) return;
