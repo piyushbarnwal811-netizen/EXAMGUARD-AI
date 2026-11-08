@@ -2128,22 +2128,23 @@ function wireMcqStudio() {
       let shareUrl = "";
       let waUrl = "";
 
+      const base = window.location.origin;
+      const qParams = new URLSearchParams({
+        coaching: coachingName,
+        exam: examTitle,
+        duration: String(duration),
+      });
+
       try {
         const res = await postJson("/exam/admin/publish-coaching-exam", payload);
-        shareUrl = res.shareable_url.replace("exam.html", "mcq-exam.html");
-        waUrl = res.whatsapp_share_url.replace("exam.html", "mcq-exam.html");
-      } catch {
-        // Fallback dynamic URL generation
-        const base = window.location.origin;
-        const qParams = new URLSearchParams({
-          coaching: coachingName,
-          exam: examTitle,
-          duration: String(duration),
-        });
-        shareUrl = `${base}/src/pages/mcq-exam.html?${qParams.toString()}`;
-        const waMsg = `📝 *Online Proctored Exam Announcement*\n🏛️ *Institute:* ${coachingName}\n📚 *Exam:* ${examTitle}\n⏱️ *Duration:* ${duration} Minutes\n📱 *Device:* 100% Mobile & PC Friendly\n\n👉 *Start Exam Here:* ${shareUrl}\n\n⚠️ *Instructions:* Open link, enter your Name & Roll Number to start. Screen lockdown and dynamic identity watermark are active.`;
-        waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waMsg)}`;
+        if (res.slug) qParams.set("exam_id", res.slug);
+      } catch (backendErr) {
+        console.warn("Backend publish fallback to direct client link:", backendErr);
       }
+
+      shareUrl = `${base}/src/pages/mcq-exam.html?${qParams.toString()}`;
+      const waMsg = `📝 *Online Proctored Exam Announcement*\n🏛️ *Institute:* ${coachingName}\n📚 *Exam:* ${examTitle}\n⏱️ *Duration:* ${duration} Minutes\n📱 *Device:* 100% Mobile & PC Friendly\n\n👉 *Start Exam Here:* ${shareUrl}\n\n⚠️ *Instructions:* Open link, enter your Name & Roll Number to start. Screen lockdown and dynamic identity watermark are active.`;
+      waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waMsg)}`;
 
       if (shareableInput) shareableInput.value = shareUrl;
       if (whatsappBtn) whatsappBtn.href = waUrl;

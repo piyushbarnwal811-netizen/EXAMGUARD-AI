@@ -572,6 +572,15 @@
         let remainingSeconds = durationMins * 60;
         let timerInterval = null;
 
+        function getApiBase() {
+          const stored = localStorage.getItem("examguard_api_base");
+          if (stored) return stored.replace(/\/$/, "");
+          if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+            return "/api";
+          }
+          return "https://examguard-ai-317p.onrender.com/api";
+        }
+
         // Elements
         const onboardingGate = document.getElementById("onboardingGate");
         const activeExamSection = document.getElementById("activeExamSection");
@@ -638,7 +647,7 @@
 
           // Authenticate session with backend
           try {
-            const apiBase = (localStorage.getItem("examguard_api_base") || "/api").replace(/\/$/, "");
+            const apiBase = getApiBase();
             const res = await fetch(`${apiBase}/auth/coaching-candidate-onboard`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -703,7 +712,7 @@
         // Fetch Questions from API or fallback
         async function fetchQuestions() {
           try {
-            const apiBase = (localStorage.getItem("examguard_api_base") || "/api").replace(/\/$/, "");
+            const apiBase = getApiBase();
             const token = localStorage.getItem("examguard_token") || "";
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -807,6 +816,22 @@
 
           // Haptic feedback if supported
           if (navigator.vibrate) navigator.vibrate(25);
+
+          // Background sync to backend if session token exists
+          const token = localStorage.getItem("examguard_token");
+          if (token && q.id) {
+            fetch(`${getApiBase()}/exam/answers`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                question_id: q.id,
+                selected_option: letter,
+              }),
+            }).catch(() => {});
+          }
 
           renderCurrentQuestion();
         });
@@ -929,6 +954,14 @@
           clearInterval(timerInterval);
           submissionModal.style.display = "none";
           activeExamSection.style.display = "none";
+
+          const token = localStorage.getItem("examguard_token");
+          if (token) {
+            fetch(`${getApiBase()}/exam/timestamp?event=EXAM_END`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+            }).catch(() => {});
+          }
 
           const total = questions.length;
           const answered = Object.keys(selectedAnswers).length;

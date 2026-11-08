@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ExamGuard AI | Next-Gen AI Proctored Assessment Platform</title>
+    <script>
+      (function () {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get("coaching") || p.get("exam_id")) {
+          window.location.replace("/src/pages/mcq-exam.html" + window.location.search);
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="src/css/style.css" />
   </head>
   <body>
