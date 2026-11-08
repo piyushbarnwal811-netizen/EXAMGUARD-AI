@@ -723,5 +723,74 @@ async def list_coaching_submissions(
     return records
 
 
+@router.get("/admin/export-coaching-results")
+async def export_coaching_results(
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
+):
+    """Exports all candidate results as an in-memory, highly reliable Excel report."""
+    students = (await db.execute(select(Student).order_by(Student.id.desc()))).scalars().all()
+    questions = (await db.execute(select(Question))).scalars().all()
+    q_map = {q.id: q.correct_option for q in questions}
+    total_questions = len(questions)
+
+    records = []
+    for s in students:
+        session_res = await db.execute(
+            select(ExamSession).where(ExamSession.student_id == s.id).order_by(ExamSession.start_time.desc())
+        )
+        session = session_res.scalars().first()
+
+        resp_res = await db.execute(
+            select(Response).where(Response.student_id == s.id)
+        )
+        responses = resp_res.scalars().all()
+        answered = len(responses)
+        correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
+
+        is_completed = (session is not None and session.end_time is not None) or answered > 0
+        started_at = (
+            session.start_time.strftime("%Y-%m-%d %H:%M:%S")
+            if session and session.start_time
+            else (s.created_at.strftime("%Y-%m-%d %H:%M:%S") if s.created_at else "")
+        )
+        submitted_at = (
+            session.end_time.strftime("%Y-%m-%d %H:%M:%S")
+            if session and session.end_time
+            else (started_at if is_completed else "")
+        )
+
+        records.append({
+            "Roll Number": s.roll_no or "N/A",
+            "Student Name": s.name,
+            "Email / Contact": s.email,
+            "Coaching / Batch": session.location if session and session.location else "Coaching Portal",
+            "Total Questions": total_questions,
+            "Questions Answered": answered,
+            "Correct Answers (Score)": correct,
+            "Score Percentage (%)": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
+            "Exam Status": "Completed" if is_completed else "In Progress",
+            "Exam Start Time": started_at,
+            "Exam Submission Time": submitted_at,
+        })
+
+    df = pd.DataFrame(records)
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Candidate Results")
+    out.seek(0)
+
+    filename = f"ExamGuard_Candidate_Results_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.xlsx"
+    return FastApiResponse(
+        content=out.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+
 
 

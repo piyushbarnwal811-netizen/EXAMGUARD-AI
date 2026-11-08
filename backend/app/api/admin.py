@@ -12,7 +12,7 @@ import string
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response as FastApiResponse
 from pydantic import BaseModel, EmailStr, ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -967,41 +967,113 @@ async def exam_history(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ) -> list[ExamHistoryOut]:
+    now = datetime.now(timezone.utc)
+    history_items: list[ExamHistoryOut] = []
+
     contests = (
         await db.execute(select(CodingContest).order_by(CodingContest.start_time.desc()))
     ).scalars().all()
-    if not contests:
-        return []
 
-    contest_ids = [contest.id for contest in contests]
-    count_rows = await db.execute(
-        select(
-            CodeSubmission.contest_id,
-            func.count(CodeSubmission.id),
-            func.count(func.distinct(CodeSubmission.student_id)),
+    if contests:
+        contest_ids = [contest.id for contest in contests]
+        count_rows = await db.execute(
+            select(
+                CodeSubmission.contest_id,
+                func.count(CodeSubmission.id),
+                func.count(func.distinct(CodeSubmission.student_id)),
+            )
+            .where(CodeSubmission.contest_id.in_(contest_ids))
+            .group_by(CodeSubmission.contest_id)
         )
-        .where(CodeSubmission.contest_id.in_(contest_ids))
-        .group_by(CodeSubmission.contest_id)
+        counts_by_contest = {
+            contest_id: (int(total_submissions), int(students_submitted))
+            for contest_id, total_submissions, students_submitted in count_rows.all()
+        }
+        for contest in contests:
+            history_items.append(
+                ExamHistoryOut(
+                    id=contest.id,
+                    title=contest.title,
+                    start_time=_as_aware_utc(contest.start_time),
+                    end_time=_as_aware_utc(contest.end_time),
+                    is_published=contest.is_published,
+                    status=_contest_status(contest, now),
+                    total_submissions=counts_by_contest.get(contest.id, (0, 0))[0],
+                    students_submitted=counts_by_contest.get(contest.id, (0, 0))[1],
+                )
+            )
+
+    # Include Coaching & Objective MCQ Assessments
+    from app.api.exam import published_coaching_exams
+    tracked_coaching_names = set()
+
+    for idx, (slug, data) in enumerate(published_coaching_exams.items()):
+        coaching = str(data.get("coaching_name", "Institute")).strip()
+        exam_title = str(data.get("exam_title", "Objective Assessment")).strip()
+        duration_mins = int(data.get("duration_minutes", 60))
+        tracked_coaching_names.add(coaching.lower())
+
+        pub_at_str = data.get("published_at")
+        try:
+            pub_start = datetime.fromisoformat(pub_at_str) if pub_at_str else now
+        except Exception:
+            pub_start = now
+        pub_end = pub_start + timedelta(minutes=duration_mins)
+
+        st_count_res = await db.execute(
+            select(func.count(func.distinct(ExamSession.student_id)))
+            .where(ExamSession.location == coaching)
+        )
+        st_count = st_count_res.scalar() or 0
+
+        sub_count_res = await db.execute(
+            select(func.count(Response.id))
+            .join(Student, Response.student_id == Student.id)
+            .join(ExamSession, ExamSession.student_id == Student.id)
+            .where(ExamSession.location == coaching)
+        )
+        sub_count = sub_count_res.scalar() or 0
+
+        exam_int_id = 9000 + (abs(hash(slug)) % 900)
+        history_items.append(
+            ExamHistoryOut(
+                id=exam_int_id,
+                title=f"📝 {exam_title} • {coaching}",
+                start_time=_as_aware_utc(pub_start),
+                end_time=_as_aware_utc(pub_end),
+                is_published=True,
+                status="ACTIVE" if now < pub_end else "ENDED",
+                total_submissions=sub_count,
+                students_submitted=st_count,
+            )
+        )
+
+    # Also detect any coaching batches stored in ExamSession
+    locations_res = await db.execute(
+        select(ExamSession.location, func.min(ExamSession.start_time), func.max(ExamSession.start_time), func.count(func.distinct(ExamSession.student_id)))
+        .where(ExamSession.location.is_not(None))
+        .group_by(ExamSession.location)
     )
-    counts_by_contest = {
-        contest_id: (int(total_submissions), int(students_submitted))
-        for contest_id, total_submissions, students_submitted in count_rows.all()
-    }
-    now = datetime.now(timezone.utc)
-
-    return [
-        ExamHistoryOut(
-            id=contest.id,
-            title=contest.title,
-            start_time=_as_aware_utc(contest.start_time),
-            end_time=_as_aware_utc(contest.end_time),
-            is_published=contest.is_published,
-            status=_contest_status(contest, now),
-            total_submissions=counts_by_contest.get(contest.id, (0, 0))[0],
-            students_submitted=counts_by_contest.get(contest.id, (0, 0))[1],
+    for loc_row in locations_res.all():
+        loc_name, earliest, latest, student_count = loc_row
+        if not loc_name or loc_name.strip().lower() in tracked_coaching_names:
+            continue
+        tracked_coaching_names.add(loc_name.strip().lower())
+        exam_int_id = 8000 + (abs(hash(loc_name)) % 900)
+        history_items.append(
+            ExamHistoryOut(
+                id=exam_int_id,
+                title=f"📝 Objective Assessment • {loc_name.strip()}",
+                start_time=_as_aware_utc(earliest or now),
+                end_time=_as_aware_utc(latest or now),
+                is_published=True,
+                status="ENDED",
+                total_submissions=student_count,
+                students_submitted=student_count,
+            )
         )
-        for contest in contests
-    ]
+
+    return history_items
 
 
 @router.get("/export")
@@ -1009,15 +1081,10 @@ async def export_excel_report(
     contest_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
-) -> FileResponse:
+):
     contest: CodingContest | None = None
     if contest_id is not None:
         contest = await db.get(CodingContest, contest_id)
-        if contest is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Exam not found.",
-            )
 
     students = (
         await db.execute(select(Student).order_by(Student.roll_no))
@@ -1095,13 +1162,18 @@ async def export_excel_report(
         contest,
     )
     filename = _report_filename(contest)
-    report_path = await run_in_threadpool(
-        generate_excel_report,
-        rows,
-        filename,
-    )
-    return FileResponse(
-        report_path,
+    import pandas as pd
+    out = io.BytesIO()
+    dataframe = pd.DataFrame(list(rows))
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        dataframe.to_excel(writer, index=False)
+    out.seek(0)
+
+    return FastApiResponse(
+        content=out.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=report_path.name,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )

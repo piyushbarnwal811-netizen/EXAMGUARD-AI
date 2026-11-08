@@ -1107,6 +1107,7 @@ async function sendInvites() {
 
 
 async function downloadReport(contestId = null, fallbackFilename = "Exam_Report.xlsx") {
+  showToast("📥 Preparing Excel report...", "info", 2000);
   try {
     const query = contestId ? `?contest_id=${encodeURIComponent(contestId)}` : "";
     const response = await apiFetch(`/admin/export${query}`, {
@@ -1122,9 +1123,33 @@ async function downloadReport(contestId = null, fallbackFilename = "Exam_Report.
       fallbackFilename
     );
     downloadBlob(blob, filename);
+    showToast("✅ Comprehensive Excel report downloaded successfully!", "success", 4000);
     setStatus("Report downloaded.", "success");
   } catch (error) {
+    showToast(`❌ Download failed: ${error.message}`, "error", 5000);
     setStatus(error.message, "warning");
+  }
+}
+
+async function downloadCandidateResults() {
+  showToast("📥 Generating candidate results Excel...", "info", 2000);
+  try {
+    const response = await apiFetch("/exam/admin/export-coaching-results", {
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(errorMessageFromPayload(error, "Export failed"));
+    }
+    const blob = await response.blob();
+    const filename = filenameFromDisposition(
+      response.headers.get("content-disposition"),
+      "ExamGuard_Candidate_Results.xlsx"
+    );
+    downloadBlob(blob, filename);
+    showToast("✅ Candidate results downloaded successfully!", "success", 4000);
+  } catch (error) {
+    showToast(`❌ Download failed: ${error.message}`, "error", 5000);
   }
 }
 
@@ -2521,6 +2546,7 @@ document.addEventListener("DOMContentLoaded", () => {
   qs("[data-send-invites]")?.addEventListener("click", sendInvites);
   qs("[data-send-test-email]")?.addEventListener("click", sendTestEmail);
   qs("[data-download-report]")?.addEventListener("click", () => downloadReport());
+  qs("#btnDownloadCandidateResults")?.addEventListener("click", () => downloadCandidateResults());
   qs("[data-refresh-exam-history]")?.addEventListener("click", loadExamHistory);
   qs("#btnRefreshCoachingSubmissions")?.addEventListener("click", () => {
     loadCoachingSubmissions();
