@@ -2,6 +2,8 @@
 
 ExamGuard AI is a starter project for secure online exams. It includes a FastAPI backend, static frontend pages, webcam verification hooks, lockdown logging, IP/geofence checks, CSV upload, PIN generation, and Excel report export.
 
+Camera proctoring also checks for a visible mobile phone. A phone detected consistently across multiple camera checks triggers a student warning and is recorded in the admin Excel export with its detection count and timestamps. Camera-based detection can miss phones that are obscured or too small to recognize.
+
 ## Project Structure
 
 ```text

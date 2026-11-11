@@ -10,6 +10,7 @@ import re
 import secrets
 import string
 
+from openpyxl.styles import Alignment, Font, PatternFill
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response as FastApiResponse
@@ -71,6 +72,7 @@ ROLL_NO_SAFE = re.compile(r"[^A-Z0-9]+")
 AI_CHEATING_EVENTS = {
     "FACE_MISSING",
     "LOOKING_AWAY",
+    "MOBILE_PHONE_DETECTED",
     "MULTIPLE_FACES",
 }
 
@@ -418,6 +420,8 @@ def _build_report_rows(
     logs_by_student: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     mobile_detected_at_by_student: dict[int, datetime] = {}
     mobile_blocked_at_by_student: dict[int, datetime] = {}
+    mobile_phone_detected_at_by_student: dict[int, datetime] = {}
+    mobile_phone_latest_detected_at_by_student: dict[int, datetime] = {}
     ai_logs_by_student: dict[int, list[ExamLog]] = defaultdict(list)
     for log in logs:
         logs_by_student[log.student_id][log.event_type] += 1
@@ -429,6 +433,13 @@ def _build_report_rows(
             current = mobile_blocked_at_by_student.get(log.student_id)
             if current is None or log.timestamp < current:
                 mobile_blocked_at_by_student[log.student_id] = log.timestamp
+        if log.event_type == "MOBILE_PHONE_DETECTED":
+            first = mobile_phone_detected_at_by_student.get(log.student_id)
+            latest = mobile_phone_latest_detected_at_by_student.get(log.student_id)
+            if first is None or log.timestamp < first:
+                mobile_phone_detected_at_by_student[log.student_id] = log.timestamp
+            if latest is None or log.timestamp > latest:
+                mobile_phone_latest_detected_at_by_student[log.student_id] = log.timestamp
         if log.event_type in AI_CHEATING_EVENTS:
             ai_logs_by_student[log.student_id].append(log)
 
@@ -496,6 +507,19 @@ def _build_report_rows(
             ),
             "mobile_device_first_blocked_at": _iso(
                 mobile_blocked_at_by_student.get(student.id)
+            ),
+            "mobile_phone_camera_detected": "YES"
+            if logs_by_student[student.id].get("MOBILE_PHONE_DETECTED", 0)
+            else "NO",
+            "mobile_phone_camera_detection_count": logs_by_student[student.id].get(
+                "MOBILE_PHONE_DETECTED",
+                0,
+            ),
+            "mobile_phone_camera_first_detected_at": _iso(
+                mobile_phone_detected_at_by_student.get(student.id)
+            ),
+            "mobile_phone_camera_latest_detected_at": _iso(
+                mobile_phone_latest_detected_at_by_student.get(student.id)
             ),
         }
 
@@ -1076,6 +1100,42 @@ async def exam_history(
     return history_items
 
 
+def _format_report_worksheet(worksheet) -> None:
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    worksheet.sheet_view.showGridLines = False
+    worksheet.row_dimensions[1].height = 30
+
+    for cell in worksheet[1]:
+        cell.fill = PatternFill(fill_type="solid", fgColor="17365D")
+        cell.font = Font(color="FFFFFF", bold=True, size=10)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for column in worksheet.columns:
+        column_letter = column[0].column_letter
+        max_length = max(
+            (len(str(cell.value)) for cell in column if cell.value is not None),
+            default=0,
+        )
+        worksheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 42)
+
+    status_column = next(
+        (
+            cell.column
+            for cell in worksheet[1]
+            if cell.value == "mobile_phone_camera_detected"
+        ),
+        None,
+    )
+    if status_column is not None:
+        for row in worksheet.iter_rows(min_row=2, min_col=status_column, max_col=status_column):
+            cell = row[0]
+            color = "FCE4D6" if cell.value == "YES" else "E2F0D9"
+            cell.fill = PatternFill(fill_type="solid", fgColor=color)
+            cell.font = Font(bold=True, color="9C0006" if cell.value == "YES" else "375623")
+            cell.alignment = Alignment(horizontal="center")
+
+
 @router.get("/export")
 async def export_excel_report(
     contest_id: int | None = Query(default=None),
@@ -1167,6 +1227,7 @@ async def export_excel_report(
     dataframe = pd.DataFrame(list(rows))
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         dataframe.to_excel(writer, index=False)
+        _format_report_worksheet(writer.sheets["Sheet1"])
     out.seek(0)
 
     return FastApiResponse(

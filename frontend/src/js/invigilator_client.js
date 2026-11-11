@@ -76,12 +76,20 @@
         MULTIPLE_FACES: 20,
         FACE_MISSING: 15,
         LOOKING_AWAY: 5,
+        MOBILE_PHONE_DETECTED: 25,
         VOICE_ACTIVITY: 8,
         FULLSCREEN_EXIT: 15,
         SECONDARY_DISPLAY: 25,
       };
       const penalty = penalties[violationType] || 10;
       this.setTrustScore(currentTrustScore - penalty);
+      if (violationType === "MOBILE_PHONE_DETECTED") {
+        showProctorToast(
+          "Mobile phone detected",
+          "A phone appears to be visible in the camera. Remove it from the exam area.",
+          "urgent"
+        );
+      }
     },
     getTrustScore: function () {
       return currentTrustScore;
@@ -459,4 +467,3 @@
     connectWebSocket();
   }
 })();
-

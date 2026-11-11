@@ -19,10 +19,17 @@ test("exam page wires webcam controls and scripts", () => {
   assert.match(html, /data-camera-stop/);
   assert.match(html, /src="\.\.\/js\/camera\.js"/);
   assert.match(html, /src="\.\.\/js\/tracking\.js"/);
-  assert.match(html, /src="\.\.\/js\/proctor_ai\.js"/);
+  assert.match(html, /\.\.\/js\/proctor_ai\.js/);
   assert.match(html, /src="\.\.\/js\/precheck\.js"/);
   assert.match(html, /data-precheck-panel/);
   assert.match(html, /data-location-status/);
+});
+
+test("standalone MCQ exam starts camera AI monitoring with the exam", () => {
+  const html = read("src/pages/mcq-exam.html");
+
+  assert.match(html, /src="\.\.\/js\/proctor_ai\.js"/);
+  assert.match(html, /examguard:student-ready/);
 });
 
 test("admin page exposes coding question management", () => {
@@ -70,10 +77,13 @@ test("camera AI proctor sends suspicious behavior events without frames", () => 
   const ai = read("src/js/proctor_ai.js");
 
   assert.match(ai, /FaceLandmarker/);
+  assert.match(ai, /ObjectDetector/);
   assert.match(ai, /detectForVideo/);
   assert.match(ai, /FACE_MISSING/);
   assert.match(ai, /LOOKING_AWAY/);
   assert.match(ai, /MULTIPLE_FACES/);
+  assert.match(ai, /MOBILE_PHONE_DETECTED/);
+  assert.match(ai, /phonePresenceFrames >= 3/);
   assert.match(ai, /ExamGuardTracking\?\.sendEvent/);
 });
 

@@ -553,6 +553,7 @@
     <script src="../js/camera.js"></script>
     <script src="../js/mobile_lockdown.js"></script>
     <script src="../js/invigilator_client.js"></script>
+    <script type="module" src="../js/proctor_ai.js"></script>
 
     <script>
       (function () {
@@ -701,6 +702,8 @@
           } catch (e) {
             console.warn("Camera optional for student", e);
           }
+
+          document.dispatchEvent(new Event("examguard:student-ready"));
 
           // Start Timer
           startTimer();

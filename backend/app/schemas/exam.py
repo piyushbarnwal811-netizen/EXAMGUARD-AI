@@ -31,6 +31,7 @@ ALLOWED_TRACKING_EVENTS = {
     "LOOKING_AWAY",
     "MOBILE_DEVICE_BLOCKED",
     "MOBILE_DEVICE_DETECTED",
+    "MOBILE_PHONE_DETECTED",
     "MULTIPLE_FACES",
     "PAGE_HIDE",
     "TAB_SWITCH",
@@ -145,5 +146,4 @@ class PublishCoachingExamResponse(BaseModel):
     duration_minutes: int
     shareable_url: str
     whatsapp_share_url: str
-
 

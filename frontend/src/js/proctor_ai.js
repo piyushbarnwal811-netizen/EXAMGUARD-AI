@@ -1,28 +1,38 @@
 import {
   FaceLandmarker,
   FilesetResolver,
+  ObjectDetector,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";
 
 const PROCTOR_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const PROCTOR_WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm";
+const PHONE_DETECTOR_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite";
 
 const AI_CHEAT_EVENTS = {
   faceMissing: "FACE_MISSING",
   lookingAway: "LOOKING_AWAY",
   multipleFaces: "MULTIPLE_FACES",
+  mobilePhone: "MOBILE_PHONE_DETECTED",
 };
 
 const proctorState = {
+  vision: null,
   faceLandmarker: null,
+  objectDetector: null,
   running: false,
   lastFrameAt: 0,
+  objectDetectionFrames: 0,
   neutral: null,
   neutralSamples: [],
   violationKey: "",
   violationFrames: 0,
   cooldowns: new Map(),
+  phonePresenceFrames: 0,
+  phoneAbsentFrames: 0,
+  phoneDetectionActive: false,
 };
 
 const LANDMARKS = {
@@ -186,10 +196,65 @@ function markViolation(eventType, details = {}) {
   );
 }
 
+function reportPhoneDetection(confidence) {
+  const details = {
+    confidence,
+    detected_at: new Date().toISOString(),
+    detector: "MEDIAPIPE_OBJECT_DETECTOR",
+    device_label: "cell phone",
+  };
+  window.ExamGuardInvigilatorClient?.setViolation?.(
+    AI_CHEAT_EVENTS.mobilePhone,
+    details
+  );
+  window.ExamGuardTracking?.sendEvent?.(
+    AI_CHEAT_EVENTS.mobilePhone,
+    "Camera AI detected a mobile phone in the exam area.",
+    details,
+    { keepalive: true }
+  );
+}
+
+function checkForMobilePhone(video, now) {
+  if (!proctorState.objectDetector) return;
+
+  proctorState.objectDetectionFrames += 1;
+  if (proctorState.objectDetectionFrames % 2 !== 0) return;
+
+  const result = proctorState.objectDetector.detectForVideo(video, now);
+  const phoneCategory = (result.detections || [])
+    .flatMap((detection) => detection.categories || [])
+    .filter((category) =>
+      ["cell phone", "mobile phone", "phone"].includes(
+        (category.categoryName || "").toLowerCase()
+      )
+    )
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (phoneCategory) {
+    proctorState.phonePresenceFrames += 1;
+    proctorState.phoneAbsentFrames = 0;
+    if (proctorState.phonePresenceFrames >= 3 && !proctorState.phoneDetectionActive) {
+      proctorState.phoneDetectionActive = true;
+      reportPhoneDetection(phoneCategory.score);
+    }
+    return;
+  }
+
+  proctorState.phonePresenceFrames = 0;
+  if (proctorState.phoneDetectionActive) {
+    proctorState.phoneAbsentFrames += 1;
+    if (proctorState.phoneAbsentFrames >= 12) {
+      proctorState.phoneDetectionActive = false;
+      proctorState.phoneAbsentFrames = 0;
+    }
+  }
+}
+
 async function loadFaceLandmarker() {
   if (proctorState.faceLandmarker) return proctorState.faceLandmarker;
 
-  const vision = await FilesetResolver.forVisionTasks(PROCTOR_WASM_URL);
+  const vision = await loadVision();
   proctorState.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
       modelAssetPath: PROCTOR_MODEL_URL,
@@ -206,6 +271,29 @@ async function loadFaceLandmarker() {
   return proctorState.faceLandmarker;
 }
 
+async function loadVision() {
+  if (!proctorState.vision) {
+    proctorState.vision = await FilesetResolver.forVisionTasks(PROCTOR_WASM_URL);
+  }
+  return proctorState.vision;
+}
+
+async function loadObjectDetector() {
+  if (proctorState.objectDetector) return proctorState.objectDetector;
+
+  const vision = await loadVision();
+  proctorState.objectDetector = await ObjectDetector.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: PHONE_DETECTOR_MODEL_URL,
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    scoreThreshold: 0.45,
+    maxResults: 5,
+  });
+  return proctorState.objectDetector;
+}
+
 function proctorLoop() {
   if (!proctorState.running) return;
 
@@ -220,6 +308,7 @@ function proctorLoop() {
     now - proctorState.lastFrameAt >= minFrameGapMs
   ) {
     proctorState.lastFrameAt = now;
+    checkForMobilePhone(video, now);
     const result = landmarker.detectForVideo(video, now);
     const faces = result.faceLandmarks || [];
 
@@ -253,6 +342,14 @@ async function startAiProctoring() {
   if (!video) return;
 
   await loadFaceLandmarker();
+  try {
+    await loadObjectDetector();
+  } catch (error) {
+    console.error(
+      "[ExamGuard AI] Mobile phone detector could not start; face monitoring will continue.",
+      error
+    );
+  }
   proctorState.running = true;
   proctorLoop();
 }
