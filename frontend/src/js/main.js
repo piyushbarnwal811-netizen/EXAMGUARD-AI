@@ -1018,6 +1018,10 @@ async function loadCoachingSubmissions() {
           ? `<span class="status-tag sent"><span class="status-tag-dot"></span>Completed</span>`
           : `<span class="status-tag pending"><span class="status-tag-dot"></span>In Progress</span>`;
 
+        const phoneFlag = (item.phone_violations && item.phone_violations > 0)
+          ? `<span class="status-tag failed" style="background:rgba(239,68,68,0.25);color:#ef4444;border-color:#ef4444;font-weight:700;margin-left:6px;animation:pulse 1.5s infinite;">🚨 Phone Detected (${item.phone_violations}x)</span>`
+          : "";
+
         const scoreText = item.total_questions > 0
           ? `<strong>${item.correct_count}</strong> / ${item.total_questions} Correct`
           : `${item.answered_count} Answered`;
@@ -1034,7 +1038,7 @@ async function loadCoachingSubmissions() {
             <td><span class="format-chip" style="color:#00f2fe;">${escapeHtml(item.coaching_name)}</span></td>
             <td>${scoreText}</td>
             <td><strong style="color:${item.score_percentage >= 50 ? '#34d399' : '#f59e0b'};">${pctText}</strong></td>
-            <td>${statusBadge}</td>
+            <td><div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${statusBadge} ${phoneFlag}</div></td>
             <td class="muted" style="font-size:0.82rem;">${escapeHtml(dateText)}</td>
           </tr>
         `;

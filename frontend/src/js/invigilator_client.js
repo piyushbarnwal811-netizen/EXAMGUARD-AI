@@ -84,11 +84,7 @@
       const penalty = penalties[violationType] || 10;
       this.setTrustScore(currentTrustScore - penalty);
       if (violationType === "MOBILE_PHONE_DETECTED") {
-        showProctorToast(
-          "Mobile phone detected",
-          "A phone appears to be visible in the camera. Remove it from the exam area.",
-          "urgent"
-        );
+        showMobilePhoneWarningModal(details);
       }
     },
     getTrustScore: function () {
@@ -371,6 +367,107 @@
         toast.style.display = "none";
       }
     }, 6000);
+  }
+
+  // Mobile Phone High-Alert Security Modal for Student's Screen
+  let phoneViolationStrikes = 0;
+  function showMobilePhoneWarningModal(details = {}) {
+    phoneViolationStrikes += 1;
+    const modalId = "mobilePhoneWarningModal";
+    let modal = document.getElementById(modalId);
+
+    // 1. Play high-pitch security alert alarm via Web Audio API
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.65);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.65);
+    } catch (e) {}
+
+    // 2. Vibrate candidate device
+    if (navigator.vibrate) {
+      try {
+        navigator.vibrate([300, 150, 300, 150, 600]);
+      } catch (e) {}
+    }
+
+    // 3. Audio warning aloud
+    if ("speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance("Warning! Mobile phone detected in exam area. Remove it immediately.");
+        u.rate = 1.0;
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+
+    // 4. Create or reveal Modal Overlay
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = modalId;
+      modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        z-index: 99999999;
+        background: rgba(5, 9, 20, 0.96);
+        backdrop-filter: blur(16px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        color: #f8fafc;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      `;
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div style="max-width: 480px; width: 100%; text-align: center; background: #0f172a; border: 2px solid #ef4444; border-radius: 20px; padding: 32px 24px; box-shadow: 0 0 50px rgba(239, 68, 68, 0.45);">
+        <div style="width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); display: flex; align-items: center; justify-content: center; font-size: 36px; border: 1.5px solid #ef4444;">
+          📱🚫
+        </div>
+        
+        <div style="display: inline-block; padding: 5px 14px; border-radius: 999px; background: rgba(239, 68, 68, 0.25); color: #ef4444; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px;">
+          Security Alert • Strike ${phoneViolationStrikes} / 3
+        </div>
+
+        <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 10px; color: #ffffff;">
+          ⚠️ दूसरा मोबाइल फोन पकड़ा गया!
+        </h2>
+        
+        <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 16px;">
+          Aapke camera me <strong>dusra mobile phone</strong> detect hua hai. Exam ke dauran kisi dusre phone ya screen se cheating karna sakht mana hai.
+        </p>
+
+        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 10px; padding: 12px; margin-bottom: 22px; text-align: left; font-size: 12px; color: #fca5a5; line-height: 1.5;">
+          🚨 <strong>Live Invigilator Notified:</strong> Yeh violation snapshot ke saath Examiner (Admin) ko turant report kar diya gaya hai. Agli baar phone dikhne par exam terminate kar diya jayega.
+        </div>
+
+        <button type="button" id="btnDismissPhoneWarning" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: none; border-radius: 10px; font-weight: 700; font-size: 15px; cursor: pointer; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);">
+          ✓ मैंने फोन हटा दिया है - परीक्षा जारी रखें
+        </button>
+      </div>
+    `;
+
+    modal.style.display = "flex";
+
+    // Immediate heartbeat to admin
+    latestViolation = "MOBILE_PHONE_DETECTED";
+    sendHeartbeat();
+
+    document.getElementById("btnDismissPhoneWarning")?.addEventListener("click", () => {
+      modal.style.display = "none";
+      latestViolation = null;
+    });
   }
 
   // Heartbeat sender (every 4.5 seconds)

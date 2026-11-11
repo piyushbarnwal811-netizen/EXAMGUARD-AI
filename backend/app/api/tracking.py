@@ -114,6 +114,26 @@ async def log_event(
             session.network_isp = payload.network_isp
 
     await db.commit()
+
+    if payload.event_type in {"MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"}:
+        try:
+            import asyncio
+            from app.api.invigilator_ws import hub
+            roll_no = str(subject.get("roll_no", "Candidate"))
+            for exam_id in list(hub.invigilator_sockets.keys()):
+                asyncio.create_task(hub.broadcast_to_invigilators(exam_id, {
+                    "type": "CANDIDATE_VIOLATION_ALERT",
+                    "violation": "MOBILE_PHONE_DETECTED",
+                    "studentId": student_id,
+                    "sessionId": str(session.id if session else student_id),
+                    "rollNo": roll_no,
+                    "name": str(subject.get("sub", roll_no)),
+                    "message": f"Candidate {roll_no} detected using a secondary mobile phone!",
+                    "timestamp": timestamp.isoformat(),
+                }))
+        except Exception:
+            pass
+
     return {
         "status": "logged",
         "event_type": payload.event_type,

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response as FastApiResponse
 from fastapi.concurrency import run_in_threadpool
 import pandas as pd
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -697,6 +697,14 @@ async def list_coaching_submissions(
         answered = len(responses)
         correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
 
+        phone_count_res = await db.execute(
+            select(func.count(ExamLog.id)).where(
+                ExamLog.student_id == s.id,
+                ExamLog.event_type.in_(["MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"])
+            )
+        )
+        phone_count = phone_count_res.scalar() or 0
+
         is_completed = (session is not None and session.end_time is not None) or answered > 0
         started_at = (
             session.start_time.isoformat()
@@ -716,6 +724,7 @@ async def list_coaching_submissions(
             "correct_count": correct,
             "score_percentage": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
             "status": "Completed" if is_completed else "In Progress",
+            "phone_violations": phone_count,
             "started_at": started_at,
             "submitted_at": submitted_at,
         })
@@ -748,6 +757,14 @@ async def export_coaching_results(
         answered = len(responses)
         correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
 
+        phone_count_res = await db.execute(
+            select(func.count(ExamLog.id)).where(
+                ExamLog.student_id == s.id,
+                ExamLog.event_type.in_(["MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"])
+            )
+        )
+        phone_count = phone_count_res.scalar() or 0
+
         is_completed = (session is not None and session.end_time is not None) or answered > 0
         started_at = (
             session.start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -770,6 +787,7 @@ async def export_coaching_results(
             "Correct Answers (Score)": correct,
             "Score Percentage (%)": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
             "Exam Status": "Completed" if is_completed else "In Progress",
+            "Secondary Mobile Phone Detected": f"YES ({phone_count} alerts)" if phone_count > 0 else "NO (Clean)",
             "Exam Start Time": started_at,
             "Exam Submission Time": submitted_at,
         })
