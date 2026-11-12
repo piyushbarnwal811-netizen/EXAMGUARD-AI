@@ -2001,6 +2001,31 @@ function wireMcqStudio() {
     });
   });
 
+  // Template Download Buttons (.xlsx / .csv) using Render API + Admin Auth
+  document.querySelectorAll("[data-download-mcq-template]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const fmt = btn.dataset.downloadMcqTemplate || "xlsx";
+      try {
+        showToast(`📥 Downloading .${fmt} template...`, "info", 1500);
+        const response = await apiFetch(`/exam/admin/questions/sample-template?format=${encodeURIComponent(fmt)}`, {
+          headers: authHeaders(),
+        });
+        if (!response.ok) {
+          throw new Error("Template download failed");
+        }
+        const blob = await response.blob();
+        const filename = filenameFromDisposition(
+          response.headers.get("content-disposition"),
+          `mcq_questions_template.${fmt}`
+        );
+        downloadBlob(blob, filename);
+        showToast(`✅ Template (.${fmt}) downloaded!`, "success");
+      } catch (err) {
+        showToast(`❌ ${err.message}`, "warning");
+      }
+    });
+  });
+
   // Excel / CSV File Dropzone
   const dropzone = qs("#mcqDropzoneBox");
   const fileInput = qs("#mcqSheetInput");
