@@ -137,3 +137,18 @@ test("email exam links route to the one-time student exam flow", () => {
   assert.match(exam, /apiBase\}\/download\/seb-config\?token=/);
   assert.match(main, /postJson\("\/auth\/verify-invite", \{\s*token: inviteToken/s);
 });
+
+test("100-student deployment builds live cockpit and routes MCQ telemetry & shuffled options cleanly", () => {
+  const viteConfig = read("vite.config.js");
+  const mcqHtml = read("src/pages/mcq-exam.html");
+  const invigilatorClient = read("src/js/invigilator_client.js");
+  const adminLive = read("src/pages/admin-live.html");
+
+  assert.match(viteConfig, /src\/pages\/admin-live\.html/);
+  assert.match(mcqHtml, /window\.EXAMGUARD_API_BASE[\s\S]*src="\.\.\/js\/tracking\.js"/);
+  assert.match(mcqHtml, /option_ids/);
+  assert.match(invigilatorClient, /resolveWsBaseUrl/);
+  assert.match(invigilatorClient, /reconnectWithIdentity/);
+  assert.match(adminLive, /resolveWsBase/);
+  assert.match(adminLive, /scheduleRenderMatrix/);
+});

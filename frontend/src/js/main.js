@@ -363,6 +363,9 @@ function renderMcqWorkspace() {
   const answeredCount = Object.keys(mcqState.answers).length;
   const currentSelected = mcqState.answers[qId];
   const isMarked = mcqState.markedForReview.has(qId);
+  const optionIds = Array.isArray(current.option_ids) ? current.option_ids : null;
+  const selectedSlotIdx = currentSelected && optionIds ? optionIds.indexOf(currentSelected) : -1;
+  const selectedDisplayLetter = selectedSlotIdx >= 0 ? String.fromCharCode(65 + selectedSlotIdx) : currentSelected;
 
   const countBadge = qs("[data-mcq-count-badge]");
   if (countBadge) countBadge.textContent = `${answeredCount}/${total} Answered`;
@@ -393,15 +396,16 @@ function renderMcqWorkspace() {
           <div class="mcq-options-grid">
             ${(current.options || [])
               .map((optionText, idx) => {
-                const letter = String.fromCharCode(65 + idx);
-                const isSelected = currentSelected === letter;
+                const displayLetter = String.fromCharCode(65 + idx);
+                const canonicalValue = (optionIds && optionIds[idx]) || displayLetter;
+                const isSelected = currentSelected === canonicalValue;
                 return `
                   <label class="mcq-option-item ${isSelected ? 'selected' : ''}">
-                    <div class="mcq-option-letter">${letter}</div>
+                    <div class="mcq-option-letter">${displayLetter}</div>
                     <input
                       type="radio"
                       name="q${qId}"
-                      value="${letter}"
+                      value="${canonicalValue}"
                       data-question-id="${qId}"
                       ${isSelected ? 'checked' : ''}
                     />
@@ -419,7 +423,7 @@ function renderMcqWorkspace() {
             ← Previous
           </button>
           <div class="mcq-footer-status">
-            ${currentSelected ? `<span class="mcq-saved-pill">✓ Saved (Option ${currentSelected})</span>` : '<span class="muted">Not answered yet</span>'}
+            ${currentSelected ? `<span class="mcq-saved-pill">✓ Saved (Option ${escapeHtml(selectedDisplayLetter)})</span>` : '<span class="muted">Not answered yet</span>'}
           </div>
           <button type="button" class="btn-glow btn-mcq-nav" id="btnNextQ">
             ${mcqState.currentIndex === total - 1 ? 'Save & Review' : 'Save & Next →'}

@@ -243,10 +243,25 @@ async def coaching_candidate_onboard(
     result = await db.execute(select(Student).where(Student.roll_no == roll_no))
     student = result.scalar_one_or_none()
     if not student:
+        # Guard against duplicate emails across two different roll numbers
+        email_conflict = (
+            await db.execute(select(Student.id).where(Student.email == email))
+        ).scalar_one_or_none()
+        safe_email = (
+            f"{roll_no.lower()}@student.examguard.ai" if email_conflict else email
+        )
+        # If roll_no fallback email somehow also collides, suffix with timestamp
+        if safe_email != email:
+            fallback_conflict = (
+                await db.execute(select(Student.id).where(Student.email == safe_email))
+            ).scalar_one_or_none()
+            if fallback_conflict:
+                safe_email = f"{roll_no.lower()}.{int(datetime.now(timezone.utc).timestamp())}@student.examguard.ai"
+
         student = Student(
             name=name,
             roll_no=roll_no,
-            email=email,
+            email=safe_email,
             is_pin_used=True,
             is_invite_used=True,
         )

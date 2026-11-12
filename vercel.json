@@ -9,6 +9,7 @@
     { "source": "/student-exam", "destination": "/src/pages/student-exam.html" },
     { "source": "/login", "destination": "/src/pages/login.html" },
     { "source": "/admin", "destination": "/src/pages/admin.html" },
+    { "source": "/admin-live", "destination": "/src/pages/admin-live.html" },
     { "source": "/src/pages/mcq-mcq-exam.html", "destination": "/src/pages/mcq-exam.html" },
     { "source": "/src/:path*", "destination": "/src/:path*" },
     { "source": "/assets/:path*", "destination": "/assets/:path*" },

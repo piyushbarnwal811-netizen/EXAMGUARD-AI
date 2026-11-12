@@ -6,8 +6,8 @@
 (function () {
   "use strict";
 
-  const CLIENT_VERSION = "2.1.0";
-  const HEARTBEAT_INTERVAL_MS = 4500; // 4.5 seconds to prevent network choke
+  const CLIENT_VERSION = "2.2.0";
+  const HEARTBEAT_INTERVAL_MS = 8000; // 8s keeps 100+ concurrent WebSockets smooth while alerts push instantly
   const THUMBNAIL_WIDTH = 160;
   const THUMBNAIL_HEIGHT = 120;
   const THUMBNAIL_QUALITY = 0.5; // Compressed ~5-8KB WebP
@@ -18,37 +18,62 @@
     return params.get(name) || "";
   }
 
-  const examId =
-    getQueryParam("examId") ||
-    getQueryParam("exam_id") ||
-    getQueryParam("id") ||
-    localStorage.getItem("examguard_exam_id") ||
-    "exam_default";
+  function resolveWsBaseUrl() {
+    const fallbackApi = "https://examguard-ai-317p.onrender.com/api";
+    const configured = (window.EXAMGUARD_API_BASE || localStorage.getItem("examguard_api_base") || "").trim().replace(/\/$/, "");
+    let apiUrl = configured;
+    if (!apiUrl) {
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      apiUrl = isLocal ? "/api" : fallbackApi;
+    }
+    if (apiUrl.startsWith("/")) {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}${apiUrl}`;
+    }
+    return apiUrl.replace(/^http:\/\//i, "ws://").replace(/^https:\/\//i, "wss://");
+  }
 
-  const sessionId =
-    getQueryParam("sessionId") ||
-    getQueryParam("session_id") ||
-    localStorage.getItem("examguard_session_id") ||
-    `session_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  let examId = "exam_default";
+  let sessionId = "";
+  let rollNo = "";
+  let candidateName = "";
+  let candidateId = "";
 
-  localStorage.setItem("examguard_session_id", sessionId);
+  function refreshIdentity() {
+    examId =
+      getQueryParam("examId") ||
+      getQueryParam("exam_id") ||
+      getQueryParam("id") ||
+      localStorage.getItem("examguard_exam_id") ||
+      "exam_default";
 
-  const rollNo =
-    getQueryParam("roll") ||
-    getQueryParam("roll_no") ||
-    localStorage.getItem("examguard_roll_no") ||
-    `Roll-${Math.floor(1000 + Math.random() * 9000)}`;
+    sessionId =
+      getQueryParam("sessionId") ||
+      getQueryParam("session_id") ||
+      localStorage.getItem("examguard_session_id") ||
+      `session_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+    localStorage.setItem("examguard_session_id", sessionId);
 
-  const candidateName =
-    getQueryParam("name") ||
-    localStorage.getItem("examguard_candidate_name") ||
-    "Student " + rollNo;
+    rollNo =
+      getQueryParam("roll") ||
+      getQueryParam("roll_no") ||
+      localStorage.getItem("examguard_roll_no") ||
+      `Roll-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  const candidateId =
-    getQueryParam("candidateId") ||
-    getQueryParam("user_id") ||
-    localStorage.getItem("examguard_user_id") ||
-    `cand_${sessionId.substring(0, 8)}`;
+    candidateName =
+      getQueryParam("name") ||
+      localStorage.getItem("examguard_student_name") ||
+      localStorage.getItem("examguard_candidate_name") ||
+      "Student " + rollNo;
+
+    candidateId =
+      getQueryParam("candidateId") ||
+      getQueryParam("user_id") ||
+      localStorage.getItem("examguard_user_id") ||
+      `cand_${sessionId.substring(0, 8)}`;
+  }
+
+  refreshIdentity();
 
   // State
   let ws = null;
@@ -92,6 +117,21 @@
     },
     isFrozen: function () {
       return isSessionFrozen;
+    },
+    reconnectWithIdentity: function () {
+      isSessionTerminated = false;
+      reconnectAttempts = 0;
+      clearTimeout(reconnectTimer);
+      refreshIdentity();
+      connectWebSocket();
+    },
+    disconnect: function () {
+      isSessionTerminated = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        try { ws.close(); } catch (_) {}
+      }
     },
   };
 
@@ -499,27 +539,39 @@
   // Connect WebSocket to FastAPI Hub
   function connectWebSocket() {
     if (isSessionTerminated) return;
+    clearTimeout(reconnectTimer);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (ws) {
+      try {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      } catch (_) {}
+      ws = null;
+    }
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/ws/invigilator/${encodeURIComponent(examId)}?role=candidate&session_id=${encodeURIComponent(sessionId)}&candidate_id=${encodeURIComponent(candidateId)}&roll_no=${encodeURIComponent(rollNo)}&name=${encodeURIComponent(candidateName)}`;
+    refreshIdentity();
+
+    const wsBase = resolveWsBaseUrl();
+    const wsUrl = `${wsBase}/ws/invigilator/${encodeURIComponent(examId)}?role=candidate&session_id=${encodeURIComponent(sessionId)}&candidate_id=${encodeURIComponent(candidateId)}&roll_no=${encodeURIComponent(rollNo)}&name=${encodeURIComponent(candidateName)}`;
 
     try {
-      ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
+      ws = socket;
 
-      ws.onopen = function () {
+      socket.onopen = function () {
         console.info(`[ExamGuard WS] Candidate connected to invigilator cockpit (Session: ${sessionId})`);
         reconnectAttempts = 0;
 
         // Send initial heartbeat immediately
         sendHeartbeat();
 
-        // Start 4.5s periodic micro-stream polling
+        // Start periodic micro-stream polling
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
       };
 
-      ws.onmessage = function (event) {
+      socket.onmessage = function (event) {
         try {
           const msg = JSON.parse(event.data);
           const type = msg.type;
@@ -536,7 +588,8 @@
         }
       };
 
-      ws.onclose = function (e) {
+      socket.onclose = function () {
+        if (ws !== socket) return;
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (!isSessionTerminated) {
           // Reconnect with backoff
@@ -548,19 +601,31 @@
         }
       };
 
-      ws.onerror = function (err) {
+      socket.onerror = function (err) {
         console.warn("[ExamGuard WS] Socket error:", err);
-        ws.close();
+        try { socket.close(); } catch (_) {}
       };
     } catch (e) {
       console.warn("[ExamGuard WS] Connection exception:", e);
     }
   }
 
-  // Auto-initialize when DOM is ready
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", connectWebSocket);
-  } else {
+  document.addEventListener("examguard:student-ready", function () {
+    window.ExamGuardInvigilatorClient.reconnectWithIdentity();
+  });
+
+  function initInvigilatorClient() {
+    const onboardingGate = document.getElementById("onboardingGate");
+    if (onboardingGate && onboardingGate.style.display !== "none") {
+      // Wait for student onboarding completion on standalone MCQ portal
+      return;
+    }
     connectWebSocket();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initInvigilatorClient);
+  } else {
+    initInvigilatorClient();
   }
 })();

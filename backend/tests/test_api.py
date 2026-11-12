@@ -783,3 +783,93 @@ def test_python_code_uses_local_fallback_when_executor_is_unavailable(monkeypatc
 
     assert results[0].passed is True
     assert results[0].actual_output.strip() == "5"
+
+
+def test_coaching_mcq_shuffled_options_grade_accurately_and_export(client):
+    admin_headers = {"Authorization": f"Bearer {_admin_token(client)}"}
+
+    q_resp = client.post(
+        "/api/exam/admin/questions",
+        headers=admin_headers,
+        json={
+            "question_text": "Which protocol secures web traffic?",
+            "option_a": "FTP",
+            "option_b": "Telnet",
+            "option_c": "HTTPS",
+            "option_d": "SMTP",
+            "correct_option": "C",
+        },
+    )
+    assert q_resp.status_code == 201
+
+    onboard_1 = client.post(
+        "/api/auth/coaching-candidate-onboard",
+        json={
+            "name": "Student One",
+            "roll_no": "ROLL101",
+            "contact": "shared@example.com",
+            "coaching_name": "Apex Coaching",
+            "exam_id": "apex-test-1",
+        },
+    )
+    assert onboard_1.status_code == 200
+    token_1 = onboard_1.json()["access_token"]
+
+    onboard_2 = client.post(
+        "/api/auth/coaching-candidate-onboard",
+        json={
+            "name": "Student Two",
+            "roll_no": "ROLL102",
+            "contact": "shared@example.com",
+            "coaching_name": "Apex Coaching",
+            "exam_id": "apex-test-1",
+        },
+    )
+    assert onboard_2.status_code == 200
+
+    student_headers = {"Authorization": f"Bearer {token_1}"}
+    questions_resp = client.get("/api/exam/questions", headers=student_headers)
+    assert questions_resp.status_code == 200
+    items = questions_resp.json()
+    assert len(items) == 1
+    assert set(items[0]["option_ids"]) == {"A", "B", "C", "D"}
+    https_idx = items[0]["options"].index("HTTPS")
+    canonical_choice = items[0]["option_ids"][https_idx]
+    assert canonical_choice == "C"
+
+    ans_resp = client.post(
+        "/api/exam/answers",
+        headers=student_headers,
+        json={"question_id": items[0]["id"], "selected_option": canonical_choice},
+    )
+    assert ans_resp.status_code == 200
+    assert ans_resp.json()["saved"] is True
+
+    back_nav = client.post(
+        "/api/tracking/events",
+        headers=student_headers,
+        json={"event_type": "BACK_NAVIGATION", "message": "Back pressed"},
+    )
+    assert back_nav.status_code == 200
+
+    phone_alert = client.post(
+        "/api/tracking/events",
+        headers=student_headers,
+        json={"event_type": "MOBILE_PHONE_DETECTED", "message": "Cell phone seen"},
+    )
+    assert phone_alert.status_code == 200
+
+    end_resp = client.post("/api/exam/timestamp?event=EXAM_END", headers=student_headers)
+    assert end_resp.status_code == 200
+
+    subs_resp = client.get("/api/exam/admin/coaching-submissions", headers=admin_headers)
+    assert subs_resp.status_code == 200
+    rows = {r["roll_no"]: r for r in subs_resp.json()}
+    assert rows["ROLL101"]["correct_count"] == 1
+    assert rows["ROLL101"]["score_percentage"] == 100.0
+    assert rows["ROLL101"]["phone_violations"] == 1
+    assert rows["ROLL101"]["status"] == "Completed"
+
+    export_resp = client.get("/api/exam/admin/export-coaching-results", headers=admin_headers)
+    assert export_resp.status_code == 200
+    assert "spreadsheetml.sheet" in export_resp.headers["content-type"]

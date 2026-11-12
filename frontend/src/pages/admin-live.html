@@ -581,19 +581,35 @@
     <script>
       (function () {
         const query = new URLSearchParams(window.location.search);
-        const examId = query.get("examId") || query.get("id") || "exam_default";
+        const examId = query.get("examId") || query.get("exam_id") || query.get("id") || "ALL";
 
-        // Seed candidates for testing / initial display
-        let candidates = [
-          { sessionId: "sess_01", rollNo: "CS-2026-004", name: "Aarav Sharma", trustScore: 42, latestViolation: "MULTIPLE_FACES", isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_02", rollNo: "CS-2026-012", name: "Beatriz Santos", trustScore: 55, latestViolation: "TAB_SWITCH", isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_03", rollNo: "CS-2026-027", name: "Chen Wei", trustScore: 98, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_04", rollNo: "CS-2026-031", name: "Devon Miller", trustScore: 84, latestViolation: "GAZE_ANOMALY", isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_05", rollNo: "CS-2026-045", name: "Elena Rostova", trustScore: 38, latestViolation: "SECONDARY_DISPLAY", isFrozen: true, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_06", rollNo: "CS-2026-052", name: "Farhan Siddiqui", trustScore: 95, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_07", rollNo: "CS-2026-068", name: "Grace Hopper Jr.", trustScore: 100, latestViolation: null, isFrozen: false, isTerminated: false, thumbnailBase64: null },
-          { sessionId: "sess_08", rollNo: "CS-2026-074", name: "Hassan Al-Mansoor", trustScore: 68, latestViolation: "VOICE_ACTIVITY", isFrozen: false, isTerminated: false, thumbnailBase64: null },
-        ];
+        function resolveApiBase() {
+          const stored = (localStorage.getItem("examguard_api_base") || "").trim().replace(/\/$/, "");
+          if (stored) return stored;
+          if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+            return "/api";
+          }
+          return "https://examguard-ai-317p.onrender.com/api";
+        }
+
+        function resolveWsBase() {
+          const api = resolveApiBase();
+          if (api.startsWith("/")) {
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            return `${protocol}//${window.location.host}${api}`;
+          }
+          return api.replace(/^http:\/\//i, "ws://").replace(/^https:\/\//i, "wss://");
+        }
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch];
+          });
+        }
+
+        let candidates = [];
+        let renderTimer = null;
+        const emergencyAlertCooldowns = new Map();
 
         let ws = null;
         let activeFilter = "ALL";
@@ -651,7 +667,7 @@
 
           // Metrics
           const criticalTotal = candidates.filter(c => c.trustScore < 60 || c.latestViolation).length;
-          countActiveEl.textContent = `${candidates.filter(c => !c.isTerminated).length} / 50`;
+          countActiveEl.textContent = `${candidates.filter(c => !c.isTerminated).length} Live`;
           countCritEl.textContent = criticalTotal;
           countCritFilterEl.textContent = criticalTotal;
           countAllEl.textContent = candidates.length;
@@ -666,36 +682,52 @@
             : 100;
           countAvgTrustEl.textContent = `${avgScore}%`;
 
+          if (!list.length) {
+            grid.innerHTML = `
+              <div style="grid-column:1/-1;text-align:center;padding:60px 20px;background:rgba(15,23,42,0.55);border:1px dashed rgba(148,163,184,0.3);border-radius:16px;color:#94a3b8;">
+                <div style="font-size:36px;margin-bottom:10px;">📡</div>
+                <strong style="color:#f8fafc;display:block;font-size:1rem;margin-bottom:6px;">${candidates.length ? "No candidates match this filter" : "Live Cockpit Connected — Waiting for Students"}</strong>
+                <span style="font-size:0.85rem;">As soon as students open the exam link and start their test, live video tiles and cheating alerts appear here automatically.</span>
+              </div>
+            `;
+            return;
+          }
+
           // Generate HTML
           grid.innerHTML = list.map(c => {
             const isCrit = (c.trustScore < 60 || c.latestViolation) && !c.isTerminated && !c.isFrozen;
             const scoreClass = c.trustScore >= 80 ? "score-clean" : c.trustScore >= 60 ? "score-warn" : "score-critical";
+            const safeRoll = escapeHtml(c.rollNo);
+            const safeName = escapeHtml(c.name);
+            const safeSession = escapeHtml(c.sessionId);
+            const safeViolation = escapeHtml(c.latestViolation);
+            const initials = escapeHtml((c.name || "S").split(' ').filter(Boolean).map(p => p[0]).slice(0, 2).join('') || "S");
             
             return `
-              <div class="candidate-card ${isCrit ? "is-critical" : ""} ${c.isFrozen ? "is-frozen" : ""} ${c.isTerminated ? "is-terminated" : ""}" data-session="${c.sessionId}">
+              <div class="candidate-card ${isCrit ? "is-critical" : ""} ${c.isFrozen ? "is-frozen" : ""} ${c.isTerminated ? "is-terminated" : ""}" data-session="${safeSession}">
                 <div class="card-header-meta">
                   <div class="card-header-left">
-                    <span class="card-roll">${c.rollNo}</span>
-                    <span class="card-name">${c.name}</span>
+                    <span class="card-roll">${safeRoll}</span>
+                    <span class="card-name">${safeName}</span>
                   </div>
                   <div class="score-pill ${scoreClass}">
                     <span>🛡️</span>
-                    <span>${c.trustScore}%</span>
+                    <span>${Number(c.trustScore)}%</span>
                   </div>
                 </div>
 
                 <div class="thumbnail-viewport">
                   ${c.thumbnailBase64
-                    ? `<img src="${c.thumbnailBase64}" alt="${c.name}" />`
+                    ? `<img src="${c.thumbnailBase64}" alt="${safeName}" />`
                     : `<div class="thumbnail-placeholder">
-                         <div class="placeholder-avatar">${c.name.split(' ').map(p => p[0]).slice(0, 2).join('')}</div>
-                         <span>POLLING (4.5s)</span>
+                         <div class="placeholder-avatar">${initials}</div>
+                         <span>POLLING (8s)</span>
                        </div>`
                   }
 
                   ${c.latestViolation && !c.isFrozen && !c.isTerminated ? `
-                    <div class="violation-ribbon" title="${c.latestViolation}">
-                      ⚠️ ${c.latestViolation}
+                    <div class="violation-ribbon" title="${safeViolation}">
+                      ⚠️ ${safeViolation}
                     </div>
                   ` : ''}
 
@@ -716,19 +748,27 @@
                 </div>
 
                 <div class="card-actions-strip">
-                  <button type="button" class="btn-warn" data-action="warn" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                  <button type="button" class="btn-warn" data-action="warn" data-session="${safeSession}" ${c.isTerminated ? "disabled" : ""}>
                     🎙️ Warn
                   </button>
-                  <button type="button" class="${c.isFrozen ? "btn-unfreeze" : "btn-freeze"}" data-action="freeze" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                  <button type="button" class="${c.isFrozen ? "btn-unfreeze" : "btn-freeze"}" data-action="freeze" data-session="${safeSession}" ${c.isTerminated ? "disabled" : ""}>
                     ${c.isFrozen ? "▶️ Resume" : "⏸️ Freeze"}
                   </button>
-                  <button type="button" class="btn-disqualify" data-action="disqualify" data-session="${c.sessionId}" ${c.isTerminated ? "disabled" : ""}>
+                  <button type="button" class="btn-disqualify" data-action="disqualify" data-session="${safeSession}" ${c.isTerminated ? "disabled" : ""}>
                     ⏹️ Lock
                   </button>
                 </div>
               </div>
             `;
           }).join("");
+        }
+
+        function scheduleRenderMatrix() {
+          if (renderTimer) return;
+          renderTimer = setTimeout(function () {
+            renderTimer = null;
+            renderMatrix();
+          }, 900);
         }
 
         // Delegate Card Actions
@@ -813,7 +853,7 @@
             ws.send(JSON.stringify(payload));
           } else {
             // REST Fallback
-            fetch(`/api/v1/invigilator/${encodeURIComponent(examId)}/intervene`, {
+            fetch(`${resolveApiBase()}/v1/invigilator/${encodeURIComponent(examId)}/intervene`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -889,8 +929,7 @@
 
         // Connect WebSocket
         function connectWs() {
-          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-          const wsUrl = `${protocol}//${window.location.host}/api/ws/invigilator/${encodeURIComponent(examId)}?role=invigilator`;
+          const wsUrl = `${resolveWsBase()}/ws/invigilator/${encodeURIComponent(examId)}?role=invigilator`;
 
           try {
             ws = new WebSocket(wsUrl);
@@ -917,13 +956,18 @@
                     candidates.unshift(cand);
                   }
 
-                  // Check for Mobile Phone Cheating Event
+                  // Check for Mobile Phone Cheating Event (with 20s cooldown per candidate on periodic heartbeats)
                   if (cand.latestViolation === "MOBILE_PHONE_DETECTED") {
-                    triggerEmergencyAlert(cand, "Webcam AI detected a secondary mobile phone in candidate's exam area!");
+                    const lastAlertAt = emergencyAlertCooldowns.get(cand.sessionId) || 0;
+                    if (Date.now() - lastAlertAt > 20000) {
+                      emergencyAlertCooldowns.set(cand.sessionId, Date.now());
+                      triggerEmergencyAlert(cand, "Webcam AI detected a secondary mobile phone in candidate's exam area!");
+                    }
                   }
 
-                  renderMatrix();
+                  scheduleRenderMatrix();
                 } else if (data.type === "CANDIDATE_VIOLATION_ALERT") {
+                  emergencyAlertCooldowns.set(data.sessionId, Date.now());
                   triggerEmergencyAlert({
                     sessionId: data.sessionId,
                     name: data.name,

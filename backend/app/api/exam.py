@@ -10,6 +10,7 @@ from fastapi.responses import Response as FastApiResponse
 from fastapi.concurrency import run_in_threadpool
 import pandas as pd
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -88,6 +89,7 @@ async def get_questions(
             id=item["id"],
             question=item["question"],
             options=item["options"],
+            option_ids=item["shuffledOrder"],
         )
         for item in shuffled
     ]
@@ -119,16 +121,33 @@ async def submit_answer(
     if response:
         response.selected_option = payload.selected_option
         response.timestamp = submitted_at
+        await db.commit()
     else:
-        response = Response(
-            student_id=student_id,
-            question_id=payload.question_id,
-            selected_option=payload.selected_option,
-            timestamp=submitted_at,
+        db.add(
+            Response(
+                student_id=student_id,
+                question_id=payload.question_id,
+                selected_option=payload.selected_option,
+                timestamp=submitted_at,
+            )
         )
-        db.add(response)
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            existing = (
+                await db.execute(
+                    select(Response).where(
+                        Response.student_id == student_id,
+                        Response.question_id == payload.question_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.selected_option = payload.selected_option
+                existing.timestamp = submitted_at
+                await db.commit()
 
-    await db.commit()
     return ResponseOut(
         question_id=payload.question_id,
         selected_option=payload.selected_option,
@@ -672,40 +691,77 @@ async def get_published_coaching_exam(slug: str):
     return data
 
 
+async def _build_coaching_submission_rows(db: AsyncSession) -> list[dict]:
+    """Builds candidate submission summaries using batched queries to scale cleanly."""
+    students = (await db.execute(select(Student).order_by(Student.id.desc()))).scalars().all()
+    if not students:
+        return []
+
+    questions = (await db.execute(select(Question))).scalars().all()
+    q_map = {q.id: q.correct_option for q in questions}
+    total_questions = len(questions)
+
+    sessions = (
+        await db.execute(
+            select(ExamSession).order_by(ExamSession.student_id, ExamSession.start_time.desc(), ExamSession.id.desc())
+        )
+    ).scalars().all()
+    latest_session_by_student: dict[int, ExamSession] = {}
+    for sess in sessions:
+        if sess.student_id not in latest_session_by_student:
+            latest_session_by_student[sess.student_id] = sess
+
+    all_responses = (await db.execute(select(Response))).scalars().all()
+    responses_by_student: dict[int, list[Response]] = {}
+    for resp in all_responses:
+        responses_by_student.setdefault(resp.student_id, []).append(resp)
+
+    phone_rows = (
+        await db.execute(
+            select(ExamLog.student_id, func.count(ExamLog.id))
+            .where(
+                ExamLog.event_type.in_(
+                    ["MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"]
+                )
+            )
+            .group_by(ExamLog.student_id)
+        )
+    ).all()
+    phone_count_by_student = {sid: int(cnt) for sid, cnt in phone_rows}
+
+    rows: list[dict] = []
+    for s in students:
+        session = latest_session_by_student.get(s.id)
+        responses = responses_by_student.get(s.id, [])
+        answered = len(responses)
+        correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
+        phone_count = phone_count_by_student.get(s.id, 0)
+        is_completed = (session is not None and session.end_time is not None) or answered > 0
+
+        rows.append({
+            "student": s,
+            "session": session,
+            "total_questions": total_questions,
+            "answered_count": answered,
+            "correct_count": correct,
+            "score_percentage": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
+            "is_completed": is_completed,
+            "phone_violations": phone_count,
+        })
+    return rows
+
+
 @router.get("/admin/coaching-submissions")
 async def list_coaching_submissions(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
     """Lists all candidate submissions for objective/coaching assessments with their score and status."""
-    students = (await db.execute(select(Student).order_by(Student.id.desc()))).scalars().all()
-    questions = (await db.execute(select(Question))).scalars().all()
-    q_map = {q.id: q.correct_option for q in questions}
-    total_questions = len(questions)
-
+    rows = await _build_coaching_submission_rows(db)
     records = []
-    for s in students:
-        session_res = await db.execute(
-            select(ExamSession).where(ExamSession.student_id == s.id).order_by(ExamSession.start_time.desc())
-        )
-        session = session_res.scalars().first()
-
-        resp_res = await db.execute(
-            select(Response).where(Response.student_id == s.id)
-        )
-        responses = resp_res.scalars().all()
-        answered = len(responses)
-        correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
-
-        phone_count_res = await db.execute(
-            select(func.count(ExamLog.id)).where(
-                ExamLog.student_id == s.id,
-                ExamLog.event_type.in_(["MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"])
-            )
-        )
-        phone_count = phone_count_res.scalar() or 0
-
-        is_completed = (session is not None and session.end_time is not None) or answered > 0
+    for row in rows:
+        s = row["student"]
+        session = row["session"]
         started_at = (
             session.start_time.isoformat()
             if session and session.start_time
@@ -719,12 +775,12 @@ async def list_coaching_submissions(
             "roll_no": s.roll_no or "N/A",
             "email": s.email,
             "coaching_name": (session.location if session and session.location else "Direct Online Portal"),
-            "total_questions": total_questions,
-            "answered_count": answered,
-            "correct_count": correct,
-            "score_percentage": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
-            "status": "Completed" if is_completed else "In Progress",
-            "phone_violations": phone_count,
+            "total_questions": row["total_questions"],
+            "answered_count": row["answered_count"],
+            "correct_count": row["correct_count"],
+            "score_percentage": row["score_percentage"],
+            "status": "Completed" if row["is_completed"] else "In Progress",
+            "phone_violations": row["phone_violations"],
             "started_at": started_at,
             "submitted_at": submitted_at,
         })
@@ -738,34 +794,14 @@ async def export_coaching_results(
     _admin: dict[str, object] = Depends(require_admin),
 ):
     """Exports all candidate results as an in-memory, highly reliable Excel report."""
-    students = (await db.execute(select(Student).order_by(Student.id.desc()))).scalars().all()
-    questions = (await db.execute(select(Question))).scalars().all()
-    q_map = {q.id: q.correct_option for q in questions}
-    total_questions = len(questions)
-
+    rows = await _build_coaching_submission_rows(db)
     records = []
-    for s in students:
-        session_res = await db.execute(
-            select(ExamSession).where(ExamSession.student_id == s.id).order_by(ExamSession.start_time.desc())
-        )
-        session = session_res.scalars().first()
+    for row in rows:
+        s = row["student"]
+        session = row["session"]
+        phone_count = row["phone_violations"]
+        is_completed = row["is_completed"]
 
-        resp_res = await db.execute(
-            select(Response).where(Response.student_id == s.id)
-        )
-        responses = resp_res.scalars().all()
-        answered = len(responses)
-        correct = sum(1 for r in responses if q_map.get(r.question_id) == r.selected_option)
-
-        phone_count_res = await db.execute(
-            select(func.count(ExamLog.id)).where(
-                ExamLog.student_id == s.id,
-                ExamLog.event_type.in_(["MOBILE_PHONE_DETECTED", "MOBILE_DEVICE_DETECTED", "SECONDARY_PHONE_CHEATING"])
-            )
-        )
-        phone_count = phone_count_res.scalar() or 0
-
-        is_completed = (session is not None and session.end_time is not None) or answered > 0
         started_at = (
             session.start_time.strftime("%Y-%m-%d %H:%M:%S")
             if session and session.start_time
@@ -782,10 +818,10 @@ async def export_coaching_results(
             "Student Name": s.name,
             "Email / Contact": s.email,
             "Coaching / Batch": session.location if session and session.location else "Coaching Portal",
-            "Total Questions": total_questions,
-            "Questions Answered": answered,
-            "Correct Answers (Score)": correct,
-            "Score Percentage (%)": round((correct / total_questions * 100), 1) if total_questions > 0 else 0,
+            "Total Questions": row["total_questions"],
+            "Questions Answered": row["answered_count"],
+            "Correct Answers (Score)": row["correct_count"],
+            "Score Percentage (%)": row["score_percentage"],
             "Exam Status": "Completed" if is_completed else "In Progress",
             "Secondary Mobile Phone Detected": f"YES ({phone_count} alerts)" if phone_count > 0 else "NO (Clean)",
             "Exam Start Time": started_at,

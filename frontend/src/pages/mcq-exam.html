@@ -549,6 +549,18 @@
     </div>
 
     <!-- SCRIPTS -->
+    <script>
+      window.EXAMGUARD_API_BASE = (function () {
+        var stored = localStorage.getItem("examguard_api_base");
+        if (stored) return stored.replace(/\/$/, "");
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+          return "/api";
+        }
+        return "https://examguard-ai-317p.onrender.com/api";
+      })();
+      // Wake up backend early while candidate enters Name & Roll Number
+      fetch(window.EXAMGUARD_API_BASE + "/ping").catch(function () {});
+    </script>
     <script src="../js/tracking.js"></script>
     <script src="../js/camera.js"></script>
     <script src="../js/mobile_lockdown.js"></script>
@@ -562,24 +574,48 @@
         const examTitle = query.get("exam") || "Objective Assessment";
         const durationMins = parseInt(query.get("duration") || "60", 10);
         const examId = query.get("exam_id") || "exam_default";
+        localStorage.setItem("examguard_exam_id", examId);
 
         let studentName = localStorage.getItem("examguard_student_name") || "";
         let studentRoll = localStorage.getItem("examguard_roll_no") || "";
 
         let questions = [];
         let currentIndex = 0;
-        let selectedAnswers = {}; // { qId: "A" }
+        let selectedAnswers = {}; // { qId: canonicalOptionLetter }
+        const unsyncedAnswers = {}; // { qId: canonicalOptionLetter }
         let markedForReview = new Set();
         let remainingSeconds = durationMins * 60;
         let timerInterval = null;
+        let examFinalized = false;
 
         function getApiBase() {
-          const stored = localStorage.getItem("examguard_api_base");
-          if (stored) return stored.replace(/\/$/, "");
-          if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-            return "/api";
+          return window.EXAMGUARD_API_BASE || "https://examguard-ai-317p.onrender.com/api";
+        }
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch];
+          });
+        }
+
+        async function fetchWithRetry(url, options, maxAttempts) {
+          const attempts = maxAttempts || 4;
+          let lastError = null;
+          for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+              const res = await fetch(url, options);
+              if (res.status !== 502 && res.status !== 503 && res.status !== 504) {
+                return res;
+              }
+              lastError = new Error("Server busy (" + res.status + ")");
+            } catch (err) {
+              lastError = err;
+            }
+            if (attempt < attempts) {
+              await new Promise((r) => setTimeout(r, 1500 * attempt));
+            }
           }
-          return "https://examguard-ai-317p.onrender.com/api";
+          throw lastError || new Error("Network unavailable");
         }
 
         // Elements
@@ -642,14 +678,22 @@
             return;
           }
 
+          const submitBtn = onboardingForm.querySelector('button[type="submit"]');
+          const originalBtnHtml = submitBtn ? submitBtn.innerHTML : "";
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "⏳ Connecting to Exam Server...";
+          }
+
           localStorage.setItem("examguard_student_name", studentName);
+          localStorage.setItem("examguard_candidate_name", studentName);
           localStorage.setItem("examguard_roll_no", studentRoll);
           localStorage.setItem("examguard_coaching_name", coachingName);
 
-          // Authenticate session with backend
+          // Authenticate session with backend (with retry for server wake-up / concurrent burst)
           try {
             const apiBase = getApiBase();
-            const res = await fetch(`${apiBase}/auth/coaching-candidate-onboard`, {
+            const res = await fetchWithRetry(`${apiBase}/auth/coaching-candidate-onboard`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -659,14 +703,22 @@
                 coaching_name: coachingName,
                 exam_id: examId,
               }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              localStorage.setItem("examguard_token", data.access_token);
-              localStorage.setItem("examguard_session_id", String(data.session_id));
+            }, 4);
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}`);
             }
+            const data = await res.json();
+            localStorage.setItem("examguard_token", data.access_token);
+            localStorage.setItem("examguard_session_id", String(data.session_id));
+            localStorage.setItem("examguard_user_id", String(data.student_id || ""));
           } catch (err) {
-            console.warn("Backend offline onboarding fallback", err);
+            console.warn("Onboarding request failed:", err);
+            alert("⚠️ Exam server se connect hone me samasya aa rahi hai (server wake-up ho sakta hai). Kripya 5 second baad dubara 'Start Proctored Exam' dabayein.");
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = originalBtnHtml;
+            }
+            return;
           }
 
           startExam();
@@ -712,14 +764,17 @@
           await fetchQuestions();
         }
 
-        // Fetch Questions from API or fallback
+        // Fetch Questions from API (with retry)
         async function fetchQuestions() {
+          questionStatement.textContent = "⏳ Loading exam questions from server...";
+          optionsContainer.innerHTML = "";
+
           try {
             const apiBase = getApiBase();
             const token = localStorage.getItem("examguard_token") || "";
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-            const res = await fetch(`${apiBase}/exam/questions`, { headers });
+            const res = await fetchWithRetry(`${apiBase}/exam/questions`, { headers }, 4);
             if (res.ok) {
               const data = await res.json();
               if (data && data.length) {
@@ -728,12 +783,22 @@
                 renderPalette();
                 return;
               }
+            } else {
+              throw new Error(`HTTP ${res.status}`);
             }
           } catch (e) {
-            console.warn("API questions failed, checking local samples", e);
+            console.warn("API questions failed:", e);
+            questionStatement.innerHTML = `Could not load questions from the server (${escapeHtml(e.message || "Network busy")}). Please tap Retry below.`;
+            optionsContainer.innerHTML = `
+              <button type="button" id="btnRetryLoadQuestions" class="btn-glow" style="padding:14px 20px;width:100%;">
+                🔄 Retry Loading Questions
+              </button>
+            `;
+            document.getElementById("btnRetryLoadQuestions")?.addEventListener("click", fetchQuestions);
+            return;
           }
 
-          // Sample questions fallback so exam NEVER breaks
+          // Sample questions fallback only when Admin has saved 0 questions in DB
           questions = [
             {
               id: 1,
@@ -773,16 +838,18 @@
           qIndexLabel.textContent = `Question ${currentIndex + 1} of ${questions.length}`;
           questionStatement.textContent = q.question;
 
-          // Options A, B, C, D
+          // Options displayed as A, B, C, D while submitting canonical option_ids
           const keys = ["A", "B", "C", "D"];
+          const optionIds = Array.isArray(q.option_ids) ? q.option_ids : null;
           optionsContainer.innerHTML = q.options
             .map((opt, idx) => {
-              const letter = keys[idx] || String.fromCharCode(65 + idx);
-              const isSelected = selectedAnswers[q.id] === letter;
+              const displayLetter = keys[idx] || String.fromCharCode(65 + idx);
+              const canonicalValue = (optionIds && optionIds[idx]) || displayLetter;
+              const isSelected = selectedAnswers[q.id] === canonicalValue;
               return `
-                <div class="option-choice-card ${isSelected ? "selected" : ""}" data-option="${letter}">
-                  <div class="option-key-badge">${letter}</div>
-                  <div class="option-text-content">${opt}</div>
+                <div class="option-choice-card ${isSelected ? "selected" : ""}" data-option="${canonicalValue}">
+                  <div class="option-key-badge">${displayLetter}</div>
+                  <div class="option-text-content">${escapeHtml(opt)}</div>
                 </div>
               `;
             })
@@ -809,32 +876,47 @@
           renderPalette();
         }
 
-        // Option Selection Click
-        optionsContainer.addEventListener("click", function (e) {
-          const card = e.target.closest(".option-choice-card");
-          if (!card) return;
-          const letter = card.dataset.option;
-          const q = questions[currentIndex];
-          selectedAnswers[q.id] = letter;
-
-          // Haptic feedback if supported
-          if (navigator.vibrate) navigator.vibrate(25);
-
-          // Background sync to backend if session token exists
+        async function syncSingleAnswer(questionId, canonicalLetter) {
           const token = localStorage.getItem("examguard_token");
-          if (token && q.id) {
-            fetch(`${getApiBase()}/exam/answers`, {
+          if (!token || !questionId || !canonicalLetter) return false;
+
+          unsyncedAnswers[questionId] = canonicalLetter;
+          try {
+            const res = await fetchWithRetry(`${getApiBase()}/exam/answers`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
-                question_id: q.id,
-                selected_option: letter,
+                question_id: questionId,
+                selected_option: canonicalLetter,
               }),
-            }).catch(() => {});
-          }
+            }, 3);
+            if (res.ok) {
+              if (unsyncedAnswers[questionId] === canonicalLetter) {
+                delete unsyncedAnswers[questionId];
+              }
+              return true;
+            }
+          } catch (_) {}
+          return false;
+        }
+
+        // Option Selection Click
+        optionsContainer.addEventListener("click", function (e) {
+          const card = e.target.closest(".option-choice-card");
+          if (!card) return;
+          const canonicalLetter = card.dataset.option;
+          const q = questions[currentIndex];
+          if (!q) return;
+          selectedAnswers[q.id] = canonicalLetter;
+
+          // Haptic feedback if supported
+          if (navigator.vibrate) navigator.vibrate(25);
+
+          // Reliable background sync to backend
+          syncSingleAnswer(q.id, canonicalLetter);
 
           renderCurrentQuestion();
         });
@@ -953,18 +1035,40 @@
         });
 
         // Finalize Exam
-        function finalizeExam() {
+        async function finalizeExam() {
+          if (examFinalized) return;
+          examFinalized = true;
           clearInterval(timerInterval);
-          submissionModal.style.display = "none";
-          activeExamSection.style.display = "none";
+
+          if (btnConfirmSubmit) {
+            btnConfirmSubmit.disabled = true;
+            btnConfirmSubmit.textContent = "⏳ Uploading Final Answers...";
+          }
+
+          // Retry syncing any pending answers before ending session
+          const pendingEntries = Object.entries(unsyncedAnswers);
+          if (pendingEntries.length) {
+            await Promise.all(
+              pendingEntries.map(([qid, letter]) => syncSingleAnswer(Number(qid), letter))
+            );
+          }
 
           const token = localStorage.getItem("examguard_token");
           if (token) {
-            fetch(`${getApiBase()}/exam/timestamp?event=EXAM_END`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => {});
+            try {
+              await fetchWithRetry(`${getApiBase()}/exam/timestamp?event=EXAM_END`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` },
+                keepalive: true,
+              }, 3);
+            } catch (_) {}
           }
+
+          window.ExamGuardMobileLockdown?.deactivate?.();
+          window.ExamGuardInvigilatorClient?.disconnect?.();
+
+          submissionModal.style.display = "none";
+          activeExamSection.style.display = "none";
 
           const total = questions.length;
           const answered = Object.keys(selectedAnswers).length;
@@ -977,8 +1081,8 @@
                 <div class="hero-shield-badge" style="border-color:#10b981;color:#34d399;">Assessment Finalized</div>
                 <h1 style="font-size:1.8rem;margin:16px 0 8px;color:#fff;">Exam Submitted Successfully</h1>
                 <p class="muted" style="font-size:0.9rem;line-height:1.5;margin-bottom:24px;">
-                  Thank you, <strong>${studentName}</strong> (${studentRoll})!<br>
-                  Your proctored test responses have been securely uploaded to <strong>${coachingName}</strong>.
+                  Thank you, <strong>${escapeHtml(studentName)}</strong> (${escapeHtml(studentRoll)})!<br>
+                  Your proctored test responses have been securely uploaded to <strong>${escapeHtml(coachingName)}</strong>.
                 </p>
                 <div style="background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin-bottom:24px;font-size:0.9rem;">
                   <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
@@ -998,10 +1102,12 @@
           `;
         }
 
-        // Tab Switch / Minimize Warning
+        // Tab Switch / Minimize logging for Desktop (mobile_lockdown.js already handles mobile alerts cleanly)
         document.addEventListener("visibilitychange", function () {
-          if (document.hidden && activeExamSection.style.display !== "none") {
-            alert("⚠️ WARNING: Tab switching or minimizing during the examination is strictly prohibited and logged!");
+          if (document.hidden && activeExamSection.style.display !== "none" && !examFinalized) {
+            if (!window.ExamGuardMobileLockdown?.isActive?.()) {
+              window.ExamGuardTracking?.sendEvent?.("TAB_SWITCH", "Candidate switched tabs during MCQ exam.");
+            }
           }
         });
       })();

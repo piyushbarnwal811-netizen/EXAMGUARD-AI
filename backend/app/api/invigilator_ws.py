@@ -64,7 +64,32 @@ class RealtimeInvigilatorHub:
             self.exam_candidates[exam_id] = {}
         if session_id not in self.exam_candidates[exam_id]:
             self.exam_candidates[exam_id][session_id] = ExamSessionState(session_id, candidate_id, roll_no, name)
+        else:
+            state = self.exam_candidates[exam_id][session_id]
+            if candidate_id:
+                state.candidate_id = candidate_id
+            if roll_no:
+                state.roll_no = roll_no
+            if name:
+                state.name = name
         return self.exam_candidates[exam_id][session_id]
+
+    def list_candidates(self, exam_id: str) -> list[ExamSessionState]:
+        if exam_id == "ALL":
+            all_states: list[ExamSessionState] = []
+            for bucket in self.exam_candidates.values():
+                all_states.extend(bucket.values())
+            return all_states
+        return list(self.exam_candidates.get(exam_id, {}).values())
+
+    def find_candidate(self, exam_id: str, session_id: str) -> ExamSessionState | None:
+        direct = self.exam_candidates.get(exam_id, {}).get(session_id)
+        if direct is not None or exam_id != "ALL":
+            return direct
+        for bucket in self.exam_candidates.values():
+            if session_id in bucket:
+                return bucket[session_id]
+        return None
 
     def register_invigilator(self, exam_id: str, ws: WebSocket):
         if exam_id not in self.invigilator_sockets:
@@ -77,22 +102,23 @@ class RealtimeInvigilatorHub:
 
     async def broadcast_to_invigilators(self, exam_id: str, message: dict[str, Any]):
         """Dispatches real-time update to all active invigilator cockpit screens for this exam."""
-        sockets = list(self.invigilator_sockets.get(exam_id, set()))
-        dead_sockets = []
+        target_buckets = [exam_id] if exam_id == "ALL" else [exam_id, "ALL"]
         payload_text = json.dumps(message)
 
-        for ws in sockets:
-            try:
-                await ws.send_text(payload_text)
-            except Exception:
-                dead_sockets.append(ws)
-
-        for dead in dead_sockets:
-            self.unregister_invigilator(exam_id, dead)
+        for bucket_id in target_buckets:
+            sockets = list(self.invigilator_sockets.get(bucket_id, set()))
+            dead_sockets = []
+            for ws in sockets:
+                try:
+                    await ws.send_text(payload_text)
+                except Exception:
+                    dead_sockets.append(ws)
+            for dead in dead_sockets:
+                self.unregister_invigilator(bucket_id, dead)
 
     async def send_to_candidate(self, exam_id: str, session_id: str, message: dict[str, Any]) -> bool:
         """Sends targeted command directly to student's browser socket."""
-        state = self.exam_candidates.get(exam_id, {}).get(session_id)
+        state = self.find_candidate(exam_id, session_id)
         if state and state.candidate_socket:
             try:
                 await state.candidate_socket.send_text(json.dumps(message))
@@ -125,10 +151,8 @@ async def websocket_invigilator_endpoint(
         # Invigilator connected
         hub.register_invigilator(exam_id, websocket)
         try:
-            # Send initial full state of all active candidates in this exam (up to 50)
-            existing_candidates = [
-                c.to_dict() for c in hub.exam_candidates.get(exam_id, {}).values()
-            ]
+            # Send initial full state of all active candidates in this exam
+            existing_candidates = [c.to_dict() for c in hub.list_candidates(exam_id)]
             await websocket.send_text(json.dumps({
                 "type": "INITIAL_MATRIX_STATE",
                 "examId": exam_id,
@@ -156,7 +180,7 @@ async def websocket_invigilator_endpoint(
                     is_frozen = bool(msg.get("isFrozen", True))
                     reason = msg.get("reason", "Integrity check in progress")
 
-                    cand_state = hub.exam_candidates.get(exam_id, {}).get(target_session)
+                    cand_state = hub.find_candidate(exam_id, target_session)
                     if cand_state:
                         cand_state.is_frozen = is_frozen
                         cand_state.freeze_reason = reason
@@ -181,7 +205,7 @@ async def websocket_invigilator_endpoint(
                     target_session = msg.get("sessionId")
                     reason = msg.get("reason", "Session terminated by invigilator.")
 
-                    cand_state = hub.exam_candidates.get(exam_id, {}).get(target_session)
+                    cand_state = hub.find_candidate(exam_id, target_session)
                     if cand_state:
                         cand_state.is_terminated = True
 
@@ -255,10 +279,8 @@ class InterveneRequest(BaseModel):
 
 @rest_router.get("/{exam_id}/matrix")
 async def get_live_matrix_snapshot(exam_id: str):
-    """Returns the current 1:50 active candidate matrix state."""
-    candidates = [
-        c.to_dict() for c in hub.exam_candidates.get(exam_id, {}).values()
-    ]
+    """Returns the current active candidate matrix state."""
+    candidates = [c.to_dict() for c in hub.list_candidates(exam_id)]
     return {
         "examId": exam_id,
         "totalActive": len(candidates),
@@ -284,7 +306,7 @@ async def execute_live_intervention(exam_id: str, payload: InterveneRequest):
     elif action in {"FREEZE", "UNFREEZE"}:
         is_frozen = (action == "FREEZE")
         reason = payload.reason or "Investigating suspected irregularity."
-        cand_state = hub.exam_candidates.get(exam_id, {}).get(session_id)
+        cand_state = hub.find_candidate(exam_id, session_id)
         if cand_state:
             cand_state.is_frozen = is_frozen
             cand_state.freeze_reason = reason
@@ -305,7 +327,7 @@ async def execute_live_intervention(exam_id: str, payload: InterveneRequest):
 
     elif action == "TERMINATE":
         reason = payload.reason or "Disqualified by Invigilator."
-        cand_state = hub.exam_candidates.get(exam_id, {}).get(session_id)
+        cand_state = hub.find_candidate(exam_id, session_id)
         if cand_state:
             cand_state.is_terminated = True
 

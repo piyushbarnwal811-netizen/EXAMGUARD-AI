@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 ALLOWED_TRACKING_EVENTS = {
+    "BACK_NAVIGATION",
     "BLOCKED_KEY",
     "CAMERA_ERROR",
     "CAMERA_PERMISSION_DENIED",
@@ -34,6 +35,7 @@ ALLOWED_TRACKING_EVENTS = {
     "MOBILE_PHONE_DETECTED",
     "MULTIPLE_FACES",
     "PAGE_HIDE",
+    "SECONDARY_PHONE_CHEATING",
     "TAB_SWITCH",
     "VISIBILITY_HIDDEN",
     "VISIBILITY_VISIBLE",
@@ -46,6 +48,7 @@ class QuestionOut(BaseModel):
     id: int
     question: str
     options: list[str]
+    option_ids: list[str] | None = None
 
 
 class QuestionCreate(BaseModel):

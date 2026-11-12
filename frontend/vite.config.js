@@ -39,6 +39,7 @@ export default defineConfig({
         main: resolve(root, "index.html"),
         login: resolve(root, "src/pages/login.html"),
         admin: resolve(root, "src/pages/admin.html"),
+        adminLive: resolve(root, "src/pages/admin-live.html"),
         exam: resolve(root, "src/pages/exam.html"),
         studentExam: resolve(root, "src/pages/student-exam.html"),
         mcqExam: resolve(root, "src/pages/mcq-exam.html"),
