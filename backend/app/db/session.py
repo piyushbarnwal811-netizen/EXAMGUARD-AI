@@ -1,7 +1,9 @@
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
@@ -10,21 +12,73 @@ from app.db.models import Base, CodingContest, CodingProblem, CodingTestCase, In
 settings = get_settings()
 
 
-def _async_database_url(database_url: str) -> str:
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if database_url.startswith("postgres://"):
-        return database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-    if database_url.startswith("sqlite:///"):
-        return database_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
-    return database_url
+def _normalize_database_url(raw_url: str) -> tuple[str, dict[str, object]]:
+    """
+    Normalizes DATABASE_URL for async SQLAlchemy with asyncpg / aiosqlite.
+    Handles postgres:// and postgresql:// prefixes, SSL parameters, and connect_args.
+    """
+    raw_url = (raw_url or "").strip()
+    if not raw_url:
+        raw_url = "sqlite+aiosqlite:///./examguard_prod.db"
+
+    # Normalize driver prefix for async SQLAlchemy
+    if raw_url.startswith("postgres://"):
+        raw_url = "postgresql+asyncpg://" + raw_url[len("postgres://"):]
+    elif raw_url.startswith("postgresql://"):
+        raw_url = "postgresql+asyncpg://" + raw_url[len("postgresql://"):]
+    elif raw_url.startswith("sqlite:///"):
+        raw_url = "sqlite+aiosqlite:///" + raw_url[len("sqlite:///"):]
+
+    connect_args: dict[str, object] = {}
+
+    if raw_url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+        return raw_url, connect_args
+
+    if raw_url.startswith("postgresql+asyncpg://"):
+        parsed = urlparse(raw_url)
+        query_params = dict(parse_qsl(parsed.query))
+
+        # Handle SSL requirement for Neon / Supabase / Render
+        sslmode = query_params.pop("sslmode", None)
+        ssl_val = query_params.pop("ssl", None)
+        if sslmode in ("require", "verify-ca", "verify-full", "prefer") or ssl_val in ("true", "1", "require"):
+            connect_args["ssl"] = "require"
+
+        # Pop any libpq query params that asyncpg does not recognize as connect kwargs
+        unsupported_libpq_params = [
+            "channel_binding",
+            "target_session_attrs",
+            "gssencmode",
+            "sslrootcert",
+            "sslcert",
+            "sslkey",
+        ]
+        for param in unsupported_libpq_params:
+            query_params.pop(param, None)
+
+        clean_query = urlencode(query_params)
+        clean_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            clean_query,
+            parsed.fragment,
+        ))
+        return clean_url, connect_args
+
+    return raw_url, connect_args
 
 
-database_url = _async_database_url(settings.DATABASE_URL)
+database_url, connect_args = _normalize_database_url(settings.DATABASE_URL)
 engine_kwargs: dict[str, object] = {
     "echo": settings.DB_ECHO,
     "pool_pre_ping": True,
 }
+
+if connect_args:
+    engine_kwargs["connect_args"] = connect_args
 
 if database_url.startswith("postgresql+asyncpg://"):
     engine_kwargs.update(
@@ -249,25 +303,64 @@ async def _seed_coding_contest() -> None:
         await db.commit()
 
 
-async def _seed_institutes() -> None:
+async def _seed_super_admin_and_institutes() -> None:
     from app.core.security import hash_secret
     async with AsyncSessionLocal() as db:
-        count = await db.scalar(select(func.count(Institute.id)))
-        if count:
-            return
+        admin_username = settings.ADMIN_USERNAME.strip()
+        admin_email = "piyushbarnwal811@gmail.com"
 
-        target_topper = Institute(
-            name="Target Topper Classes",
-            code="TARGET-TOPPER",
-            username="targettopper",
-            password_hash=hash_secret("topper123"),
-            contact_person="Director",
-            phone="9876543210",
-            email="targettopper@example.com",
-            is_active=True,
+        # 1. Ensure Super Admin account is seeded safely in the database
+        existing_admin = await db.execute(
+            select(Institute).where(
+                or_(
+                    func.lower(Institute.username) == admin_username.lower(),
+                    func.lower(Institute.email) == admin_email.lower(),
+                    func.lower(Institute.code) == "SUPER-ADMIN",
+                )
+            )
         )
-        db.add(target_topper)
-        await db.commit()
+        if not existing_admin.scalar_one_or_none():
+            super_admin = Institute(
+                name="Master Administration",
+                code="SUPER-ADMIN",
+                username=admin_username,
+                password_hash=hash_secret(settings.ADMIN_PASSWORD),
+                contact_person="Piyush Barnwal",
+                phone="9876543210",
+                email=admin_email,
+                is_active=True,
+            )
+            db.add(super_admin)
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+
+        # 2. Ensure Seed Coaching (Target Topper Classes) is seeded safely
+        existing_topper = await db.execute(
+            select(Institute).where(
+                or_(
+                    func.lower(Institute.username) == "targettopper",
+                    func.lower(Institute.code) == "TARGET-TOPPER",
+                )
+            )
+        )
+        if not existing_topper.scalar_one_or_none():
+            target_topper = Institute(
+                name="Target Topper Classes",
+                code="TARGET-TOPPER",
+                username="targettopper",
+                password_hash=hash_secret("topper123"),
+                contact_person="Director",
+                phone="9876543210",
+                email="targettopper@example.com",
+                is_active=True,
+            )
+            db.add(target_topper)
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
 
 
 async def init_db() -> None:
@@ -278,7 +371,7 @@ async def init_db() -> None:
         await conn.run_sync(_ensure_coding_problem_language_column)
     await _seed_questions()
     await _seed_coding_contest()
-    await _seed_institutes()
+    await _seed_super_admin_and_institutes()
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:

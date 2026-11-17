@@ -2736,8 +2736,8 @@ async function initializeAdminDashboard() {
     btnDemoFill.addEventListener("click", () => {
       const u = adminLoginForm?.querySelector('[name="username"]');
       const p = adminLoginForm?.querySelector('[name="password"]');
-      if (u) u.value = "admin";
-      if (p) p.value = "admin123";
+      if (u) u.value = "piyushbarnwal811@gmail.com";
+      if (p) p.value = "piyush@123";
     });
   }
 

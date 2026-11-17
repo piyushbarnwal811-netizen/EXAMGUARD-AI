@@ -11,8 +11,8 @@ TEST_DB_PATH = BACKEND_DIR / "test_examguard_api.db"
 
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["SECRET_KEY"] = "examguard-test-secret"
-os.environ["ADMIN_USERNAME"] = "admin"
-os.environ["ADMIN_PASSWORD"] = "admin123"
+os.environ["ADMIN_USERNAME"] = "piyushbarnwal811@gmail.com"
+os.environ["ADMIN_PASSWORD"] = "piyush@123"
 os.environ["ALLOWED_IP_RANGES"] = "127.0.0.1/32,::1/128"
 
 if str(BACKEND_DIR) not in sys.path:

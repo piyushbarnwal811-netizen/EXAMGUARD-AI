@@ -3,8 +3,9 @@ from fastapi.testclient import TestClient
 
 
 def test_master_admin_login(client: TestClient):
-    """Verifies that the Super Admin can log in and receives super_admin claims."""
-    res = client.post("/api/auth/admin-login", json={"username": "admin", "password": "admin123"})
+    """Verifies that the Super Admin can log in with new email credentials and receives super_admin claims."""
+    # Test 1: login with username field
+    res = client.post("/api/auth/admin-login", json={"username": "piyushbarnwal811@gmail.com", "password": "piyush@123"})
     assert res.status_code == 200, res.text
     data = res.json()
     assert data["role"] == "admin"
@@ -17,7 +18,12 @@ def test_master_admin_login(client: TestClient):
     assert profile_res.status_code == 200
     p = profile_res.json()
     assert p["is_super_admin"] is True
-    assert p["username"] == "admin"
+    assert p["username"] == "piyushbarnwal811@gmail.com"
+
+    # Test 2: login with email field instead of username
+    res_email = client.post("/api/auth/admin-login", json={"email": "piyushbarnwal811@gmail.com", "password": "piyush@123"})
+    assert res_email.status_code == 200
+    assert res_email.json()["is_super_admin"] is True
 
 
 def test_seed_institute_login(client: TestClient):
@@ -73,7 +79,7 @@ def test_super_admin_institute_crud_lifecycle(client: TestClient):
     9. Super admin deletes coaching.
     """
     # 1. Super admin login
-    res = client.post("/api/auth/admin-login", json={"username": "admin", "password": "admin123"})
+    res = client.post("/api/auth/admin-login", json={"username": "piyushbarnwal811@gmail.com", "password": "piyush@123"})
     super_token = res.json()["access_token"]
     headers = {"Authorization": f"Bearer {super_token}"}
 
@@ -189,7 +195,7 @@ def test_submissions_isolation_between_institutes(client: TestClient):
     assert not any(item["name"] == "Brilliant Student" for item in data)
 
     # Master admin fetches submissions
-    super_admin = client.post("/api/auth/admin-login", json={"username": "admin", "password": "admin123"})
+    super_admin = client.post("/api/auth/admin-login", json={"username": "piyushbarnwal811@gmail.com", "password": "piyush@123"})
     super_token = super_admin.json()["access_token"]
 
     all_subs = client.get(

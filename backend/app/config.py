@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     ALLOWED_IP_RANGES: str = "127.0.0.1/32,::1/128"
     REPORTS_DIR: Path = PROJECT_DIR / "reports"
 
-    ADMIN_USERNAME: str = "admin"
-    ADMIN_PASSWORD: str = "admin123"
+    ADMIN_USERNAME: str = "piyushbarnwal811@gmail.com"
+    ADMIN_PASSWORD: str = "piyush@123"
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

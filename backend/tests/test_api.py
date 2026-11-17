@@ -88,7 +88,7 @@ def _student_token(client, roll_no: str = "ROLL001", pin: str = "ABC123") -> dic
 def _admin_token(client) -> str:
     response = client.post(
         "/api/auth/admin-login",
-        json={"username": "admin", "password": "admin123"},
+        json={"username": "piyushbarnwal811@gmail.com", "password": "piyush@123"},
     )
     assert response.status_code == 200
     return response.json()["access_token"]
@@ -121,7 +121,7 @@ def _generated_question_payload(
 def test_admin_and_student_login_create_session(client):
     admin_response = client.post(
         "/api/auth/admin-login",
-        json={"username": "admin", "password": "admin123"},
+        json={"username": "piyushbarnwal811@gmail.com", "password": "piyush@123"},
     )
     assert admin_response.status_code == 200
     assert admin_response.json()["role"] == "admin"

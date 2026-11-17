@@ -94,19 +94,19 @@
           </p>
 
           <label>
-            Admin or Coaching Login ID
-            <input name="username" type="text" value="admin" placeholder="admin or targettopper" required autocomplete="username" />
+            Admin Email or Coaching Login ID
+            <input name="username" type="text" value="piyushbarnwal811@gmail.com" placeholder="piyushbarnwal811@gmail.com or targettopper" required autocomplete="username" />
           </label>
           <label>
             Password
-            <input name="password" type="password" value="admin123" placeholder="••••••••" required autocomplete="current-password" />
+            <input name="password" type="password" value="piyush@123" placeholder="••••••••" required autocomplete="current-password" />
           </label>
           
           <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
             <button type="submit" class="btn-glow" style="flex: 2; min-width: 160px;">
               Sign In to Dashboard
             </button>
-            <button type="button" class="button-secondary btn-sm" id="btnFillDemo" style="flex: 1; min-height: 46px;" title="Fill Super Admin credentials">
+            <button type="button" class="button-secondary btn-sm" id="btnFillDemo" style="flex: 1; min-height: 46px;" title="Fill Super Admin credentials (piyushbarnwal811@gmail.com / piyush@123)">
               ⚡ Master
             </button>
             <button type="button" class="button-secondary btn-sm" id="btnFillCoachingDemo" style="flex: 1; min-height: 46px;" title="Fill Target Topper Classes credentials">
@@ -124,8 +124,8 @@
       document.getElementById("btnFillDemo")?.addEventListener("click", () => {
         const emailInput = document.querySelector("#admin-form input[name='username']") || document.querySelector("#admin-form input[name='email']");
         const passInput = document.querySelector("#admin-form input[name='password']");
-        if (emailInput) emailInput.value = "admin";
-        if (passInput) passInput.value = "admin123";
+        if (emailInput) emailInput.value = "piyushbarnwal811@gmail.com";
+        if (passInput) passInput.value = "piyush@123";
       });
       document.getElementById("btnFillCoachingDemo")?.addEventListener("click", () => {
         const emailInput = document.querySelector("#admin-form input[name='username']") || document.querySelector("#admin-form input[name='email']");

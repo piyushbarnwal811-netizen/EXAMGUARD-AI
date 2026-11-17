@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,18 +94,36 @@ async def student_login(
     return await _verify_student_pin(payload, request, db)
 
 
+def _verify_admin_password(plain_password: str, stored_password: str) -> bool:
+    if not stored_password:
+        return False
+    if stored_password.startswith("$2b$") or stored_password.startswith("$2a$"):
+        return verify_secret(plain_password, stored_password)
+    return hmac.compare_digest(plain_password.strip(), stored_password.strip())
+
+
 @router.post("/admin-login", response_model=TokenResponse)
 async def admin_login(
     payload: AdminLogin,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    # 1. Check Master Super-Admin credentials
+    login_id = payload.identifier.strip().lower()
+    if not login_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email is required.",
+        )
+
+    clean_admin = settings.ADMIN_USERNAME.strip().lower()
+    master_identifiers = {clean_admin, "piyushbarnwal811@gmail.com"}
+
+    # 1. Check Master Super-Admin credentials from settings / env
     if (
-        payload.username == settings.ADMIN_USERNAME
-        and payload.password == settings.ADMIN_PASSWORD
+        login_id in master_identifiers
+        and _verify_admin_password(payload.password, settings.ADMIN_PASSWORD)
     ):
         token = create_access_token({
-            "sub": payload.username,
+            "sub": "piyushbarnwal811@gmail.com",
             "role": "admin",
             "is_super_admin": True,
             "institute_name": "Master Administration",
@@ -117,9 +136,13 @@ async def admin_login(
         )
 
     # 2. Check Institute / Coaching Admin credentials from Database
-    clean_username = payload.username.strip().lower()
     result = await db.execute(
-        select(Institute).where(func.lower(Institute.username) == clean_username)
+        select(Institute).where(
+            or_(
+                func.lower(Institute.username) == login_id,
+                func.lower(Institute.email) == login_id,
+            )
+        )
     )
     institute = result.scalar_one_or_none()
 
@@ -130,19 +153,25 @@ async def admin_login(
                 detail="Aapka coaching account inactive kar diya gaya hai. Kripya master admin se contact karein.",
             )
         if verify_secret(payload.password, institute.password_hash):
+            is_super = (
+                institute.code == "SUPER-ADMIN"
+                or (institute.email and institute.email.lower() == "piyushbarnwal811@gmail.com")
+                or institute.username.lower() == "piyushbarnwal811@gmail.com"
+            )
+            role = "admin" if is_super else "coaching_admin"
             token = create_access_token({
                 "sub": institute.username,
-                "role": "coaching_admin",
-                "is_super_admin": False,
+                "role": role,
+                "is_super_admin": is_super,
                 "institute_id": institute.id,
-                "institute_name": institute.name,
-                "allowed_exams": [institute.name],
+                "institute_name": "Master Administration" if is_super else institute.name,
+                "allowed_exams": ["*"] if is_super else [institute.name],
             })
             return TokenResponse(
                 access_token=token,
-                role="coaching_admin",
-                is_super_admin=False,
-                institute_name=institute.name,
+                role=role,
+                is_super_admin=is_super,
+                institute_name="Master Administration" if is_super else institute.name,
             )
 
     raise HTTPException(

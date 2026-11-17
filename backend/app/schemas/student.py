@@ -63,8 +63,13 @@ class StudentLogin(BaseModel):
 
 
 class AdminLogin(BaseModel):
-    username: str
+    username: str | None = None
+    email: str | None = None
     password: str
+
+    @property
+    def identifier(self) -> str:
+        return (self.username or self.email or "").strip()
 
 
 class TokenResponse(BaseModel):
