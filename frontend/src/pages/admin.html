@@ -15,10 +15,12 @@
         <div class="security-strip">
           <span class="status-pill success"><span class="status-dot"></span><span>SYSTEM ACTIVE</span></span>
           <span class="status-pill"><span class="status-dot"></span><span data-admin-user-pill>Admin: admin</span></span>
+          <span class="status-pill" id="instituteBadgePill" style="display: none; background: rgba(0, 242, 254, 0.12); border-color: rgba(0, 242, 254, 0.4); color: #00f2fe;"><span class="status-dot"></span><span id="instituteBadgeText">Coaching Portal</span></span>
           <span class="status-pill"><span class="status-dot"></span><span data-live-clock>Syncing...</span></span>
         </div>
       </div>
       <nav class="nav">
+        <button type="button" id="btnQuickPublishExam" class="button" style="background:linear-gradient(135deg, #10b981, #059669);border:none;color:#fff;font-weight:700;padding:8px 16px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">🚀 Share Exam Link</button>
         <a class="button button-primary" href="admin-live.html" style="background:linear-gradient(135deg, #0284c7, #6366f1);border:none;color:#fff;font-weight:700;">📡 Live Invigilator Cockpit</a>
         <a class="button button-secondary" href="login.html">Student Portal</a>
         <a class="button button-secondary" href="../../index.html">Home</a>
@@ -31,22 +33,33 @@
 
     <main class="shell">
       <!-- Admin Login Overlay Card (shown if not logged in) -->
-      <section class="card" id="adminLoginCard" style="display: none; max-width: 480px; margin: 40px auto;">
-        <div class="hero-shield-badge">🔐 Restricted Access</div>
-        <h2>Admin Authentication</h2>
-        <p class="muted">Enter administrator credentials to access student invites and contest proctoring.</p>
+      <section class="card" id="adminLoginCard" style="display: none; max-width: 480px; margin: 40px auto; padding: 32px 28px; border: 1px solid rgba(0,242,254,0.25); box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <div class="hero-shield-badge">🔐 Admin &amp; Coaching Portal | व्यवस्थापक लॉगिन</div>
+        <h2 style="margin: 12px 0 6px;">Sign In to Dashboard</h2>
+        <p class="muted" style="margin-bottom: 20px; font-size: 0.88rem;">
+          Sign in with your <strong>Super Admin</strong> account or your assigned <strong>Coaching / College ID &amp; Password</strong> to access your dashboard.
+          <br><span style="font-size:0.8rem; color:#94a3b8;">(मास्टर एडमिन या अपने कोचिंग के आईडी और पासवर्ड से लॉगिन करें)</span>
+        </p>
         <form id="adminLoginForm">
-          <label>
-            Username
-            <input name="username" type="text" value="admin" autocomplete="username" required />
+          <label style="display:block; text-align:left; margin-bottom:12px;">
+            <span style="font-weight:700; font-size:0.85rem; color:#f8fafc;">Admin or Coaching Login ID / यूज़रनेम</span>
+            <input name="username" type="text" value="admin" placeholder="admin or targettopper" autocomplete="username" required style="width:100%; padding:12px; margin-top:6px; border-radius:8px; background:rgba(15,23,42,0.9); border:1px solid var(--line); color:#fff; font-size:1rem;" />
           </label>
-          <label>
-            Password
-            <input name="password" type="password" value="admin123" autocomplete="current-password" required />
+          <label style="display:block; text-align:left; margin-bottom:16px;">
+            <span style="font-weight:700; font-size:0.85rem; color:#f8fafc;">Password / पासवर्ड</span>
+            <input name="password" type="password" value="admin123" placeholder="••••••••" autocomplete="current-password" required style="width:100%; padding:12px; margin-top:6px; border-radius:8px; background:rgba(15,23,42,0.9); border:1px solid var(--line); color:#fff; font-size:1rem;" />
           </label>
-          <button type="submit" class="btn-glow">Sign In to Dashboard</button>
+          
+          <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+            <button type="submit" class="btn-glow" style="flex: 1; padding: 12px; font-weight:700; font-size:1rem;">🚀 Sign In to Dashboard</button>
+            <button type="button" id="btnAdminDemoFill" class="button-secondary" style="padding: 12px 16px; font-size: 0.85rem;" title="Fill default credentials (admin / admin123)">⚡ Master Admin</button>
+            <button type="button" id="btnCoachingDemoFill" class="button-secondary" style="padding: 12px 16px; font-size: 0.85rem;" title="Fill coaching credentials (targettopper / topper123)">🏫 Coaching Demo</button>
+          </div>
+          <div style="font-size: 0.8rem; color: var(--muted); background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px dashed var(--line);">
+            Master: <strong>admin</strong> / <strong>admin123</strong> | Coaching: <strong>targettopper</strong> / <strong>topper123</strong>
+          </div>
         </form>
-        <p class="status" data-status style="margin-top: 16px;">Waiting for admin login.</p>
+        <p class="status" data-status style="margin-top: 16px;">Waiting for credentials.</p>
       </section>
 
       <!-- Main Dashboard (shown when logged in) -->
@@ -54,6 +67,20 @@
         <!-- Status Bar -->
         <div class="status" data-status style="margin-bottom: 20px;">
           System ready. Manage students, schedule contests, or generate AI questions below.
+        </div>
+
+        <!-- Dynamic Welcome Banner for Coaching / Super Admin -->
+        <div id="coachingWelcomeBanner" style="display: none; margin-bottom: 20px; padding: 18px 22px; border-radius: 12px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 95, 70, 0.25)); border: 1px solid rgba(16, 185, 129, 0.4); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+            <div>
+              <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #34d399; font-weight: 700;">🏛️ Coaching &amp; College Portal | कोचिंग परीक्षा पोर्टल</div>
+              <h3 style="margin: 6px 0 3px; color: #fff; font-size: 1.35rem;" id="bannerCoachingName">Target Topper Classes</h3>
+              <p class="muted" style="margin: 0; font-size: 0.88rem;">Welcome to your secure exam portal! Upload question banks, share exam links with your students, and review live candidate scores.</p>
+            </div>
+            <button type="button" class="button btn-glow" data-open-publish-modal style="background: #10b981; color: #fff; font-weight: 700; border: none; padding: 10px 20px; display: inline-flex; align-items: center; gap: 8px;">
+              🚀 Publish Exam Now
+            </button>
+          </div>
         </div>
 
         <!-- Metric Stats Grid -->
@@ -94,17 +121,20 @@
 
         <!-- Modern Tabs Navigation -->
         <nav class="admin-tabs-nav" aria-label="Dashboard sections">
-          <button type="button" class="admin-tab-btn active" data-admin-tab="students">
-            👥 Students & Bulk Invites
-          </button>
-          <button type="button" class="admin-tab-btn" data-admin-tab="schedule">
-            ⏱️ Contest Schedule
-          </button>
-          <button type="button" class="admin-tab-btn" data-admin-tab="questions">
-            🧠 AI Question Studio
+          <button type="button" class="admin-tab-btn active" data-admin-tab="questions">
+            📝 Question Bank &amp; Upload
           </button>
           <button type="button" class="admin-tab-btn" data-admin-tab="reports">
-            📊 Exam Reports & History
+            📊 Submissions &amp; Results
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="institutes" id="tabBtnInstitutes" style="display: none;">
+            🏫 Manage Coachings / Institutes
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="students">
+            👥 Students &amp; Bulk Invites
+          </button>
+          <button type="button" class="admin-tab-btn" data-admin-tab="schedule">
+            ⏱️ Coding Contest Schedule
           </button>
           <a href="admin-live.html" class="admin-tab-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:rgba(56,189,248,0.12);border-color:rgba(56,189,248,0.4);color:#38bdf8;font-weight:700;">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#38bdf8;animation:pulse 1.5s infinite;"></span>
@@ -113,7 +143,7 @@
         </nav>
 
         <!-- TAB 1: STUDENTS & BULK INVITES -->
-        <section class="admin-tab-content active" id="tab-students">
+        <section class="admin-tab-content" id="tab-students">
           <div class="grid">
             <!-- Left / Top: Upload Card -->
             <div class="card" style="grid-column: span 2;">
@@ -271,11 +301,11 @@
           </div>
         </section>
 
-        <!-- TAB 3: AI QUESTION STUDIO -->
-        <section class="admin-tab-content" id="tab-questions">
+        <!-- TAB 3: QUESTION BANK & EXAM STUDIO -->
+        <section class="admin-tab-content active" id="tab-questions">
           <div class="card wide-card">
-            <h2>AI Question Studio &amp; Problem Bank</h2>
-            <p class="muted">Create rich coding challenges manually or generate high-quality problems with automated hidden test cases using Gemini AI.</p>
+            <h2>Question Bank &amp; Coaching Exam Studio</h2>
+            <p class="muted">Add questions via Excel/CSV, Paper Paste, AI generator, or create branded exams with anti-cheating watermarks.</p>
 
             <section class="ai-generator-panel">
               <div class="eyebrow">Gemini AI Engine</div>
@@ -717,6 +747,108 @@
             </div>
           </div>
         </section>
+
+        <!-- TAB 5: MANAGE COACHINGS & COLLEGES (SUPER-ADMIN ONLY) -->
+        <section class="admin-tab-content" id="tab-institutes">
+          <div class="grid">
+            <!-- Left: Add New Coaching Account Card -->
+            <div class="card" style="grid-column: span 1;">
+              <div class="hero-shield-badge">🏫 Coaching Onboarding</div>
+              <h2 style="margin: 8px 0 6px;">Add New Coaching / College</h2>
+              <p class="muted" style="margin-bottom: 18px; font-size: 0.85rem;">
+                Create a dedicated login ID and password for affiliated coaching centers or colleges. They can use these credentials to log in, upload questions, and conduct exams for their students.
+              </p>
+
+              <form id="createInstituteForm" style="display: grid; gap: 12px;">
+                <label>
+                  <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Coaching / College Name <span style="color: var(--warning);">*</span></span>
+                  <input type="text" id="instName" name="name" required placeholder="e.g. Target Topper Classes, Apex Academy" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                </label>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <label>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Login ID / Username <span style="color: var(--warning);">*</span></span>
+                    <input type="text" id="instUsername" name="username" required placeholder="e.g. targettopper, apex101" autocomplete="username" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                  </label>
+                  <label>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Assign Password <span style="color: var(--warning);">*</span></span>
+                    <input type="password" id="instPassword" name="password" required placeholder="••••••••" autocomplete="new-password" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                  </label>
+                </div>
+
+                <label>
+                  <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Director / Contact Person</span>
+                  <input type="text" id="instContact" name="contact_person" placeholder="e.g. Director Sharma" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                </label>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <label>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Mobile / WhatsApp</span>
+                    <input type="tel" id="instPhone" name="phone" placeholder="e.g. 9876543210" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                  </label>
+                  <label>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #f8fafc;">Email (Optional)</span>
+                    <input type="email" id="instEmail" name="email" placeholder="e.g. coaching@gmail.com" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(15,23,42,0.8); border: 1px solid var(--line); color: #fff;" />
+                  </label>
+                </div>
+
+                <button type="submit" id="btnCreateInstituteSubmit" class="btn-glow" style="margin-top: 6px; padding: 12px; font-weight: 700;">
+                  ➕ Create Coaching Account (खाता बनाएं)
+                </button>
+              </form>
+
+              <!-- Success Alert Box after creation -->
+              <div id="instCreateSuccessBox" style="display: none; margin-top: 16px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 10px; padding: 16px;">
+                <div style="color: #34d399; font-weight: 700; font-size: 0.95rem; margin-bottom: 6px;">✅ Coaching Account Created!</div>
+                <div id="instCreatedDetailsText" style="font-size: 0.85rem; color: #e2e8f0; line-height: 1.5; margin-bottom: 12px;"></div>
+                <button type="button" id="btnCopyInstWhatsappMsg" class="button" style="width: 100%; background: #25d366; color: #fff; font-weight: 700; border: none; padding: 10px;">
+                  📲 Copy Details for WhatsApp
+                </button>
+              </div>
+            </div>
+
+            <!-- Right: Coaching List Table Card -->
+            <div class="card wide-card" style="grid-column: span 2;">
+              <div class="panel-head" style="margin-bottom: 14px;">
+                <div>
+                  <h2>Affiliated Coachings &amp; Colleges (<span id="statTotalInstitutes">0</span>)</h2>
+                  <p class="muted">Manage all registered institutes. You can reset passwords, suspend/activate accounts, or copy login links.</p>
+                </div>
+                <button type="button" class="button-secondary btn-sm" id="btnRefreshInstitutes">
+                  🔄 Refresh List
+                </button>
+              </div>
+
+              <!-- Search Box -->
+              <div class="table-toolbar" style="margin-bottom: 14px;">
+                <div class="search-box-wrapper" style="width: 100%;">
+                  <span class="search-box-icon">🔍</span>
+                  <input type="text" id="instituteSearchInput" placeholder="Search coaching by name, login ID, or phone..." style="width: 100%;" />
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="modern-table">
+                  <thead>
+                    <tr>
+                      <th>Coaching / College</th>
+                      <th>Login ID (Username)</th>
+                      <th>Contact / Phone</th>
+                      <th>Status</th>
+                      <th>Created</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="institutesTableBody">
+                    <tr>
+                      <td colspan="6" style="text-align: center; color: var(--muted); padding: 24px;">Loading coachings list...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
 
@@ -730,11 +862,20 @@
         tabButtons.forEach((btn) => {
           btn.addEventListener("click", () => {
             const targetTab = btn.dataset.adminTab;
+            if (!targetTab) return;
             tabButtons.forEach((b) => b.classList.remove("active"));
             tabContents.forEach((c) => c.classList.remove("active"));
             btn.classList.add("active");
             document.getElementById("tab-" + targetTab)?.classList.add("active");
           });
+        });
+
+        // Demo fill buttons
+        document.getElementById("btnCoachingDemoFill")?.addEventListener("click", () => {
+          const u = document.querySelector('#adminLoginForm [name="username"]');
+          const p = document.querySelector('#adminLoginForm [name="password"]');
+          if (u) u.value = "targettopper";
+          if (p) p.value = "topper123";
         });
 
         // Dropzone drag & drop handling

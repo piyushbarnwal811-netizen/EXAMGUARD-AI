@@ -196,6 +196,60 @@ function markViolation(eventType, details = {}) {
   );
 }
 
+let lastPhoneAlertModalAt = 0;
+function showStudentPhoneAlertPopup() {
+  const now = Date.now();
+  if (now - lastPhoneAlertModalAt < 15000) return; // 15s cooldown to avoid spam
+  lastPhoneAlertModalAt = now;
+
+  // Haptic vibration feedback on phones
+  if (typeof navigator !== "undefined" && navigator.vibrate) {
+    try {
+      navigator.vibrate([300, 150, 300, 150, 450]);
+    } catch (_) {}
+  }
+
+  let modal = document.getElementById("examguardPhoneAlertModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "examguardPhoneAlertModal";
+    modal.style.cssText = `
+      position: fixed; inset: 0; z-index: 999999;
+      background: rgba(3, 7, 18, 0.88); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    `;
+    modal.innerHTML = `
+      <div style="background:#0f172a;border:2px solid #ef4444;border-radius:18px;max-width:440px;width:100%;padding:28px 22px;box-shadow:0 0 50px rgba(239,68,68,0.4);text-align:center;color:#fff;">
+        <div style="font-size:48px;line-height:1;margin-bottom:12px;">🚨</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1px;color:#f87171;text-transform:uppercase;margin-bottom:6px;">PROCTOR SECURITY ALERT</div>
+        <h2 style="font-size:1.35rem;font-weight:800;margin:0 0 10px;color:#fff;">Secondary Mobile Phone Detected!</h2>
+        <div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:12px;margin-bottom:18px;font-size:0.85rem;line-height:1.5;color:#fecaca;text-align:left;">
+          <strong>दूसरा मोबाइल फोन / डिवाइस का प्रयोग वर्जित है!</strong><br>
+          Camera AI has detected an unauthorized smartphone in your exam workspace. This violation along with your live webcam snapshot has been flagged to your invigilator.
+        </div>
+        <p style="font-size:0.8rem;color:#94a3b8;margin:0 0 20px;">
+          Put away all unauthorized devices immediately to avoid automatic disqualification.
+        </p>
+        <button type="button" id="btnDismissPhoneAlert" style="background:#ef4444;color:#fff;border:none;padding:14px 24px;border-radius:10px;font-weight:700;font-size:0.95rem;width:100%;cursor:pointer;box-shadow:0 4px 15px rgba(239,68,68,0.4);">
+          I Understand &amp; Removed Device (हटा दिया)
+        </button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector("#btnDismissPhoneAlert")?.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  } else {
+    modal.style.display = "flex";
+  }
+
+  // Dispatch custom DOM event for exam UI hooks
+  document.dispatchEvent(new CustomEvent("examguard:secondary-phone-detected", {
+    detail: { detected_at: new Date().toISOString() }
+  }));
+}
+
 function reportPhoneDetection(confidence) {
   const details = {
     confidence,
@@ -203,10 +257,15 @@ function reportPhoneDetection(confidence) {
     detector: "MEDIAPIPE_OBJECT_DETECTOR",
     device_label: "cell phone",
   };
+  // 1. Immediately display warning popup & vibrate phone
+  showStudentPhoneAlertPopup();
+
+  // 2. Transmit to Real-Time Invigilator Cockpit
   window.ExamGuardInvigilatorClient?.setViolation?.(
     AI_CHEAT_EVENTS.mobilePhone,
     details
   );
+  // 3. Log to backend audit database
   window.ExamGuardTracking?.sendEvent?.(
     AI_CHEAT_EVENTS.mobilePhone,
     "Camera AI detected a mobile phone in the exam area.",

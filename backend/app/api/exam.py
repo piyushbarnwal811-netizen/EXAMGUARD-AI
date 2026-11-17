@@ -4,6 +4,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response as FastApiResponse
@@ -32,6 +33,7 @@ from app.services.question_shuffler import generate_student_paper
 
 router = APIRouter(prefix="/exam", tags=["exam"])
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 async def _latest_session(
@@ -95,6 +97,71 @@ async def get_questions(
     ]
 
 
+@router.get("/session-status")
+async def get_exam_session_status(
+    db: AsyncSession = Depends(get_db),
+    subject: dict[str, object] = Depends(require_student),
+) -> dict[str, Any]:
+    """Returns authoritative server-side remaining time, deadline and submission status."""
+    student_id = int(subject["student_id"])
+    now = datetime.now(timezone.utc)
+    session = await _latest_session(db, student_id, subject)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active exam session found for candidate.",
+        )
+
+    duration_mins = int(subject.get("duration_minutes") or 60)
+    session_start = session.start_time
+    if session_start.tzinfo is None:
+        session_start = session_start.replace(tzinfo=timezone.utc)
+    else:
+        session_start = session_start.astimezone(timezone.utc)
+
+    elapsed_seconds = max(0, int((now - session_start).total_seconds()))
+    total_seconds = duration_mins * 60
+    remaining_seconds = max(0, total_seconds - elapsed_seconds)
+    is_submitted = (session.end_time is not None) or (remaining_seconds == 0)
+
+    # Enforce auto-submit timestamp if timer ran out
+    if remaining_seconds == 0 and session.end_time is None:
+        session.end_time = now
+        await db.commit()
+
+    return {
+        "session_id": session.id,
+        "student_id": student_id,
+        "roll_no": str(subject.get("roll_no") or ""),
+        "candidate_name": str(subject.get("candidate_name") or ""),
+        "start_time": session_start.isoformat(),
+        "duration_minutes": duration_mins,
+        "server_time": now.isoformat(),
+        "elapsed_seconds": elapsed_seconds,
+        "remaining_seconds": 0 if is_submitted else remaining_seconds,
+        "is_submitted": is_submitted,
+        "submitted_at": session.end_time.isoformat() if session.end_time else None,
+    }
+
+
+@router.get("/my-answers")
+async def get_my_answers(
+    db: AsyncSession = Depends(get_db),
+    subject: dict[str, object] = Depends(require_student),
+) -> dict[str, Any]:
+    """Retrieves all candidate responses directly from database for 100% reload recovery."""
+    student_id = int(subject["student_id"])
+    result = await db.execute(select(Response).where(Response.student_id == student_id))
+    responses = result.scalars().all()
+    answers_map = {str(r.question_id): r.selected_option for r in responses}
+    return {
+        "student_id": student_id,
+        "total_answered": len(answers_map),
+        "answers": answers_map,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.post("/answers", response_model=ResponseOut)
 async def submit_answer(
     payload: AnswerSubmit,
@@ -102,6 +169,43 @@ async def submit_answer(
     subject: dict[str, object] = Depends(require_student),
 ) -> ResponseOut:
     student_id = int(subject["student_id"])
+
+    # 1. Validate session ownership and active status
+    session = await _latest_session(db, student_id, subject)
+    if session is None or session.student_id != student_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active exam session not found or unauthorized.",
+        )
+
+    # 2. Block answer tampering if session is already finalized/submitted
+    if session.end_time is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Exam has already been submitted. Answer modifications are rejected.",
+        )
+
+    # 3. Enforce server-side examination deadline
+    duration_mins = int(subject.get("duration_minutes") or 60)
+    grace_seconds = getattr(settings, "AUTO_SUBMIT_GRACE_SECONDS", 60)
+    submitted_at = datetime.now(timezone.utc)
+    session_start = session.start_time
+    if session_start.tzinfo is None:
+        session_start = session_start.replace(tzinfo=timezone.utc)
+    else:
+        session_start = session_start.astimezone(timezone.utc)
+
+    elapsed_seconds = (submitted_at - session_start).total_seconds()
+    max_seconds = (duration_mins * 60) + grace_seconds
+
+    if elapsed_seconds > max_seconds:
+        session.end_time = submitted_at
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Exam time limit has expired. Responses are locked.",
+        )
+
     question = await db.get(Question, payload.question_id)
     if question is None:
         raise HTTPException(
@@ -109,7 +213,6 @@ async def submit_answer(
             detail="Question not found.",
         )
 
-    submitted_at = datetime.now(timezone.utc)
     result = await db.execute(
         select(Response).where(
             Response.student_id == student_id,
@@ -169,6 +272,13 @@ async def save_timestamp(
 
     if normalized_event in {"END", "EXAM_END", "SUBMIT"}:
         if session:
+            if session.end_time is not None:
+                # Idempotent single finalization: already finalized
+                return {
+                    "event": normalized_event,
+                    "timestamp": session.end_time.isoformat(),
+                    "status": "already_submitted",
+                }
             session.end_time = timestamp
 
     db.add(
@@ -184,7 +294,7 @@ async def save_timestamp(
         )
     )
     await db.commit()
-    return {"event": normalized_event, "timestamp": timestamp.isoformat()}
+    return {"event": normalized_event, "timestamp": timestamp.isoformat(), "status": "recorded"}
 
 
 @router.get("/admin/questions", response_model=list[QuestionAdminOut])
@@ -756,12 +866,20 @@ async def list_coaching_submissions(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
-    """Lists all candidate submissions for objective/coaching assessments with their score and status."""
+    """Lists candidate submissions for objective/coaching assessments with their score and status."""
     rows = await _build_coaching_submission_rows(db)
     records = []
+    my_institute = str(_admin.get("institute_name", "")).strip().lower() if _admin.get("role") == "coaching_admin" else None
+
     for row in rows:
         s = row["student"]
         session = row["session"]
+        coaching_label = (session.location if session and session.location else "Direct Online Portal")
+
+        # If coaching admin, isolate to their coaching only
+        if my_institute and my_institute not in coaching_label.strip().lower() and coaching_label.strip().lower() not in my_institute:
+            continue
+
         started_at = (
             session.start_time.isoformat()
             if session and session.start_time
@@ -774,7 +892,7 @@ async def list_coaching_submissions(
             "name": s.name,
             "roll_no": s.roll_no or "N/A",
             "email": s.email,
-            "coaching_name": (session.location if session and session.location else "Direct Online Portal"),
+            "coaching_name": coaching_label,
             "total_questions": row["total_questions"],
             "answered_count": row["answered_count"],
             "correct_count": row["correct_count"],
@@ -793,12 +911,19 @@ async def export_coaching_results(
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, object] = Depends(require_admin),
 ):
-    """Exports all candidate results as an in-memory, highly reliable Excel report."""
+    """Exports candidate results as an in-memory, highly reliable Excel report."""
     rows = await _build_coaching_submission_rows(db)
     records = []
+    my_institute = str(_admin.get("institute_name", "")).strip().lower() if _admin.get("role") == "coaching_admin" else None
+
     for row in rows:
         s = row["student"]
         session = row["session"]
+        coaching_label = session.location if session and session.location else "Coaching Portal"
+
+        if my_institute and my_institute not in coaching_label.strip().lower() and coaching_label.strip().lower() not in my_institute:
+            continue
+
         phone_count = row["phone_violations"]
         is_completed = row["is_completed"]
 
@@ -817,7 +942,7 @@ async def export_coaching_results(
             "Roll Number": s.roll_no or "N/A",
             "Student Name": s.name,
             "Email / Contact": s.email,
-            "Coaching / Batch": session.location if session and session.location else "Coaching Portal",
+            "Coaching / Batch": coaching_label,
             "Total Questions": row["total_questions"],
             "Questions Answered": row["answered_count"],
             "Correct Answers (Score)": row["correct_count"],

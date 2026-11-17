@@ -74,6 +74,33 @@ class TokenResponse(BaseModel):
     student_id: int | None = None
     session_id: int | None = None
     roll_no: str | None = None
+    institute_name: str | None = None
+    is_super_admin: bool | None = None
+
+
+class InstituteCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=180)
+    username: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=4, max_length=100)
+    contact_person: str | None = Field(default=None, max_length=120)
+    phone: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class InstituteOut(BaseModel):
+    id: int
+    name: str
+    code: str
+    username: str
+    contact_person: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    is_active: bool
+    created_at: str | None = None
+
+
+class InstituteResetPassword(BaseModel):
+    new_password: str = Field(..., min_length=4, max_length=100)
 
 
 class StudentOut(BaseModel):

@@ -120,6 +120,7 @@ async def log_event(
             import asyncio
             from app.api.invigilator_ws import hub
             roll_no = str(subject.get("roll_no", "Candidate"))
+            cand_name = str(subject.get("candidate_name") or subject.get("name") or roll_no)
             for exam_id in list(hub.invigilator_sockets.keys()):
                 asyncio.create_task(hub.broadcast_to_invigilators(exam_id, {
                     "type": "CANDIDATE_VIOLATION_ALERT",
@@ -127,8 +128,8 @@ async def log_event(
                     "studentId": student_id,
                     "sessionId": str(session.id if session else student_id),
                     "rollNo": roll_no,
-                    "name": str(subject.get("sub", roll_no)),
-                    "message": f"Candidate {roll_no} detected using a secondary mobile phone!",
+                    "name": cand_name,
+                    "message": f"Candidate {cand_name} ({roll_no}) detected using a secondary mobile phone!",
                     "timestamp": timestamp.isoformat(),
                 }))
         except Exception:

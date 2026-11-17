@@ -13,6 +13,8 @@ from typing import Any, Dict, Set
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel
 
+from app.core.security import require_admin
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["invigilator_realtime"])
 rest_router = APIRouter(prefix="/v1/invigilator", tags=["invigilator_cockpit"])
@@ -144,10 +146,42 @@ async def websocket_invigilator_endpoint(
     candidate_id: str = Query(""),
     roll_no: str = Query(""),
     name: str = Query(""),
+    token: str | None = Query(None),
 ):
     await websocket.accept()
 
     if role == "invigilator":
+        # 1. Enforce mandatory authentication for invigilators
+        if not token:
+            logger.warning("Invigilator WS rejected: Missing authentication token.")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        from app.core.security import decode_access_token
+        try:
+            claims = decode_access_token(token)
+            user_role = claims.get("role")
+            if user_role not in {"admin", "invigilator", "coaching_admin"}:
+                logger.warning(f"Invigilator WS rejected: Role '{user_role}' is not authorized for invigilation.")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+
+            # Check exam scoping if present in claims
+            allowed_exams = claims.get("allowed_exams")
+            token_exam_id = claims.get("exam_id")
+            if allowed_exams and exam_id not in allowed_exams:
+                logger.warning(f"Invigilator WS rejected: Exam '{exam_id}' not in allowed exams.")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+            if token_exam_id and token_exam_id != "*" and token_exam_id != exam_id:
+                logger.warning(f"Invigilator WS rejected: Token exam '{token_exam_id}' does not match '{exam_id}'.")
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        except Exception as e:
+            logger.warning(f"Invigilator WS rejected: Token validation error - {e}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         # Invigilator connected
         hub.register_invigilator(exam_id, websocket)
         try:
@@ -278,7 +312,10 @@ class InterveneRequest(BaseModel):
 
 
 @rest_router.get("/{exam_id}/matrix")
-async def get_live_matrix_snapshot(exam_id: str):
+async def get_live_matrix_snapshot(
+    exam_id: str,
+    _admin: dict[str, object] = Depends(require_admin),
+):
     """Returns the current active candidate matrix state."""
     candidates = [c.to_dict() for c in hub.list_candidates(exam_id)]
     return {
@@ -289,7 +326,11 @@ async def get_live_matrix_snapshot(exam_id: str):
 
 
 @rest_router.post("/{exam_id}/intervene")
-async def execute_live_intervention(exam_id: str, payload: InterveneRequest):
+async def execute_live_intervention(
+    exam_id: str,
+    payload: InterveneRequest,
+    _admin: dict[str, object] = Depends(require_admin),
+):
     """REST endpoint to trigger live voice warning, screen freeze, or disqualification."""
     action = payload.action.upper()
     session_id = payload.sessionId

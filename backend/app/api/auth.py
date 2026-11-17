@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
-from sqlalchemy import select, update
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.geofence import get_client_ip
 from app.core.security import create_access_token, verify_secret
-from app.db.models import ExamSession, Student
+from app.db.models import ExamSession, Institute, Student
 from app.db.session import get_db
 from app.schemas.student import AdminLogin, InviteTokenVerify, StudentLogin, TokenResponse
 from app.services.invite_service import hash_invite_token
@@ -93,18 +94,61 @@ async def student_login(
 
 
 @router.post("/admin-login", response_model=TokenResponse)
-async def admin_login(payload: AdminLogin) -> TokenResponse:
+async def admin_login(
+    payload: AdminLogin,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    # 1. Check Master Super-Admin credentials
     if (
-        payload.username != settings.ADMIN_USERNAME
-        or payload.password != settings.ADMIN_PASSWORD
+        payload.username == settings.ADMIN_USERNAME
+        and payload.password == settings.ADMIN_PASSWORD
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid admin credentials.",
+        token = create_access_token({
+            "sub": payload.username,
+            "role": "admin",
+            "is_super_admin": True,
+            "institute_name": "Master Administration",
+        })
+        return TokenResponse(
+            access_token=token,
+            role="admin",
+            is_super_admin=True,
+            institute_name="Master Administration",
         )
 
-    token = create_access_token({"sub": payload.username, "role": "admin"})
-    return TokenResponse(access_token=token, role="admin")
+    # 2. Check Institute / Coaching Admin credentials from Database
+    clean_username = payload.username.strip().lower()
+    result = await db.execute(
+        select(Institute).where(func.lower(Institute.username) == clean_username)
+    )
+    institute = result.scalar_one_or_none()
+
+    if institute:
+        if not institute.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Aapka coaching account inactive kar diya gaya hai. Kripya master admin se contact karein.",
+            )
+        if verify_secret(payload.password, institute.password_hash):
+            token = create_access_token({
+                "sub": institute.username,
+                "role": "coaching_admin",
+                "is_super_admin": False,
+                "institute_id": institute.id,
+                "institute_name": institute.name,
+                "allowed_exams": [institute.name],
+            })
+            return TokenResponse(
+                access_token=token,
+                role="coaching_admin",
+                is_super_admin=False,
+                institute_name=institute.name,
+            )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid admin credentials. Username ya password galat hai.",
+    )
 
 
 @router.post("/verify-pin", response_model=TokenResponse)
@@ -222,10 +266,10 @@ async def verify_invite(
 
 
 class CoachingCandidateOnboard(BaseModel):
-    name: str
-    roll_no: str
+    name: str = Field(..., min_length=2, max_length=120)
+    roll_no: str = Field(..., min_length=1, max_length=50)
     contact: str | None = None
-    coaching_name: str
+    coaching_name: str = Field(..., min_length=1, max_length=200)
     exam_id: str | None = None
 
 
@@ -237,11 +281,23 @@ async def coaching_candidate_onboard(
 ) -> TokenResponse:
     roll_no = payload.roll_no.strip().upper()
     name = payload.name.strip()
+    if not name or len(name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student name must be at least 2 characters long.",
+        )
+    if not roll_no:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Valid roll number is required.",
+        )
+
     contact = (payload.contact or "").strip()
     email = contact if "@" in contact else f"{roll_no.lower()}@student.examguard.ai"
 
     result = await db.execute(select(Student).where(Student.roll_no == roll_no))
     student = result.scalar_one_or_none()
+
     if not student:
         # Guard against duplicate emails across two different roll numbers
         email_conflict = (
@@ -250,7 +306,6 @@ async def coaching_candidate_onboard(
         safe_email = (
             f"{roll_no.lower()}@student.examguard.ai" if email_conflict else email
         )
-        # If roll_no fallback email somehow also collides, suffix with timestamp
         if safe_email != email:
             fallback_conflict = (
                 await db.execute(select(Student.id).where(Student.email == safe_email))
@@ -266,19 +321,61 @@ async def coaching_candidate_onboard(
             is_invite_used=True,
         )
         db.add(student)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Concurrent race condition: another onboarding created this roll_no simultaneously
+            await db.rollback()
+            student = (await db.execute(select(Student).where(Student.roll_no == roll_no))).scalar_one()
     else:
         student.name = name
 
+    # Prevent duplicate attempts: check if candidate already completed and submitted this examination
+    completed_session = (
+        await db.execute(
+            select(ExamSession)
+            .where(
+                ExamSession.student_id == student.id,
+                ExamSession.end_time.is_not(None),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if completed_session:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Aapka exam pehle hi submit ho chuka hai. Duplicate attempts allowed nahi hain (Exam already completed).",
+        )
+
     client_ip = get_client_ip(request)
-    session = ExamSession(
-        student_id=student.id,
-        ip_address=client_ip,
-        location=payload.coaching_name.strip(),
-        network_isp=None,
-    )
-    db.add(session)
-    await db.flush()
+
+    # Session reuse: if candidate has an existing active session (not submitted), reuse it
+    active_session = (
+        await db.execute(
+            select(ExamSession)
+            .where(
+                ExamSession.student_id == student.id,
+                ExamSession.end_time.is_(None),
+            )
+            .order_by(ExamSession.start_time.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if active_session:
+        session = active_session
+        session.ip_address = client_ip
+        session.location = payload.coaching_name.strip()
+    else:
+        session = ExamSession(
+            student_id=student.id,
+            ip_address=client_ip,
+            location=payload.coaching_name.strip(),
+            network_isp=None,
+        )
+        db.add(session)
+        await db.flush()
+
     await db.commit()
 
     token = create_access_token(
@@ -288,6 +385,7 @@ async def coaching_candidate_onboard(
             "student_id": student.id,
             "roll_no": student.roll_no,
             "session_id": session.id,
+            "candidate_name": student.name,
             "coaching_name": payload.coaching_name.strip(),
         }
     )

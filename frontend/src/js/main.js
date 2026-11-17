@@ -1,6 +1,13 @@
 function resolveApiBase() {
   const configured = localStorage.getItem("examguard_api_base");
   if (configured) return configured.replace(/\/$/, "");
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      if (window.location.port === "8000") return "/api";
+      return "http://localhost:8000/api";
+    }
+  }
   // Default to live Render backend for production (Vercel frontend)
   return "https://examguard-ai-317p.onrender.com/api";
 }
@@ -18,6 +25,7 @@ function getToken() {
   return localStorage.getItem("examguard_token") ||
          localStorage.getItem("token") ||
          localStorage.getItem("adminToken") ||
+         localStorage.getItem("examguard_admin_token") ||
          "";
 }
 
@@ -61,6 +69,7 @@ function saveToken(token, sessionId = null) {
   localStorage.setItem("examguard_token", token);
   localStorage.setItem("token", token);
   localStorage.setItem("adminToken", token);
+  localStorage.setItem("examguard_admin_token", token);
   if (sessionId) {
     localStorage.setItem("examguard_session_id", String(sessionId));
   } else {
@@ -127,7 +136,7 @@ async function apiFetch(path, options = {}) {
         attempt++;
         continue;
       }
-      if (response.status === 401 && path !== "/auth/verify-invite") {
+      if (response.status === 401 && !AUTH_PATHS.includes(path)) {
         localStorage.removeItem('examguard_token');
         localStorage.removeItem('token');
         localStorage.removeItem('adminToken');
@@ -175,6 +184,21 @@ async function postJson(path, payload) {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Request failed" }));
+    throw new Error(errorMessageFromPayload(error));
+  }
+
+  return response.json();
+}
+
+async function patchJson(path, payload) {
+  const response = await apiFetch(path, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload || {}),
   });
 
   if (!response.ok) {
@@ -332,16 +356,34 @@ async function handleAdminLogin(event) {
     return;
   }
 
-  showBusy("Logging in…");
+  showBusy("Signing in to dashboard…");
 
   try {
     const data = await postJson("/auth/admin-login", { username, password });
     saveToken(data.access_token);
-    localStorage.setItem('user_role', 'admin');
-    setStatus("✅ Admin login successful – loading dashboard…", "success");
-    window.location.href = "admin.html";
+    localStorage.setItem('user_role', data.role || 'admin');
+    localStorage.setItem('examguard_admin_token', data.access_token);
+    localStorage.setItem('examguard_admin_user', username);
+    localStorage.setItem('examguard_is_super_admin', data.is_super_admin ? 'true' : 'false');
+    if (data.institute_name) {
+      localStorage.setItem('examguard_institute_name', data.institute_name);
+      setStatus(`✅ Logged in as ${data.institute_name} – loading dashboard…`, "success");
+    } else {
+      localStorage.removeItem('examguard_institute_name');
+      setStatus("✅ Super Admin login successful – loading dashboard…", "success");
+    }
+
+    if (window.location.pathname.includes("admin.html")) {
+      const loginCard = qs("#adminLoginCard");
+      const content = qs("#adminDashboardContent");
+      if (loginCard) loginCard.style.display = "none";
+      if (content) content.style.display = "block";
+      await initializeAdminDashboard();
+    } else {
+      window.location.href = "admin.html";
+    }
   } catch (error) {
-    setStatus(error.message, "warning");
+    setStatus(error.message || "Invalid admin credentials.", "warning");
   }
 }
 
@@ -1052,6 +1094,247 @@ async function loadCoachingSubmissions() {
     console.warn("Failed to load coaching submissions", error);
   }
 }
+
+// ---------------------------------------------------------------------------
+// MULTI-TENANT INSTITUTES & COACHINGS MANAGEMENT
+// ---------------------------------------------------------------------------
+
+let institutesDataCache = [];
+
+async function loadInstitutesList() {
+  const tbody = qs("#institutesTableBody");
+  const countEl = qs("#statTotalInstitutes");
+  if (!tbody || !getToken()) return;
+
+  try {
+    const list = await getJson("/admin/institutes");
+    institutesDataCache = Array.isArray(list) ? list : [];
+    if (countEl) countEl.textContent = institutesDataCache.length;
+    renderInstitutesTable(institutesDataCache);
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align:center; color:var(--warning); padding:20px;">
+            Failed to load coachings: ${escapeHtml(err.message)}
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+function renderInstitutesTable(institutes) {
+  const tbody = qs("#institutesTableBody");
+  if (!tbody) return;
+
+  if (!institutes.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--muted); padding: 32px;">
+          No coaching centers added yet. Use the form on the left to add your first coaching/college.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = institutes
+    .map((inst) => {
+      const activeBadge = inst.is_active
+        ? `<span class="status-tag sent"><span class="status-tag-dot"></span>Active</span>`
+        : `<span class="status-tag failed"><span class="status-tag-dot"></span>Inactive</span>`;
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight: 700; color: #fff;">${escapeHtml(inst.name)}</div>
+            ${inst.email ? `<div class="muted" style="font-size: 0.75rem;">${escapeHtml(inst.email)}</div>` : ""}
+          </td>
+          <td>
+            <code style="background: rgba(0, 242, 254, 0.1); color: #00f2fe; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;">
+              ${escapeHtml(inst.username)}
+            </code>
+          </td>
+          <td>
+            <div>${escapeHtml(inst.contact_person || "-")}</div>
+            ${inst.phone ? `<div class="muted" style="font-size: 0.75rem;">📞 ${escapeHtml(inst.phone)}</div>` : ""}
+          </td>
+          <td>${activeBadge}</td>
+          <td style="font-size: 0.8rem; color: var(--muted);">${escapeHtml(inst.created_at || "-")}</td>
+          <td>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="button-secondary btn-sm" onclick="window.ExamGuardAdmin.copyInstituteCreds('${inst.id}')" title="Copy login info for WhatsApp">
+                📋 Copy Login
+              </button>
+              <button type="button" class="button-secondary btn-sm" onclick="window.ExamGuardAdmin.resetInstitutePasswordPrompt('${inst.id}', '${escapeHtml(inst.name)}')">
+                🔑 New Pass
+              </button>
+              <button type="button" class="button-secondary btn-sm" onclick="window.ExamGuardAdmin.toggleInstituteStatus('${inst.id}')">
+                ${inst.is_active ? "⏸️ Deactivate" : "▶️ Activate"}
+              </button>
+              <button type="button" class="button-danger btn-sm" onclick="window.ExamGuardAdmin.deleteInstitutePrompt('${inst.id}', '${escapeHtml(inst.name)}')">
+                🗑️
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function wireInstituteManagement() {
+  const form = qs("#createInstituteForm");
+  if (form && !form.dataset.wired) {
+    form.dataset.wired = "true";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = qs("#instName")?.value.trim();
+      const username = qs("#instUsername")?.value.trim();
+      const password = qs("#instPassword")?.value;
+      const contactPerson = qs("#instContact")?.value.trim() || null;
+      const phone = qs("#instPhone")?.value.trim() || null;
+      const email = qs("#instEmail")?.value.trim() || null;
+
+      if (!name || !username || !password) {
+        showToast("Please provide Coaching Name, Login ID, and Password.", "warning");
+        return;
+      }
+
+      const submitBtn = qs("#btnCreateInstituteSubmit");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "⏳ Creating...";
+      }
+
+      try {
+        const payload = {
+          name,
+          username,
+          password,
+          contact_person: contactPerson,
+          phone,
+          email,
+        };
+        const created = await postJson("/admin/institutes", payload);
+        showToast(`🎉 Coaching account "${created.name}" created successfully!`, "success", 4000);
+
+        // Show WhatsApp ready message in success box
+        const successBox = qs("#instCreateSuccessBox");
+        const detailsEl = qs("#instCreatedDetailsText");
+        const waCopyBtn = qs("#btnCopyInstWhatsappMsg");
+        const origin = window.location.origin;
+        const loginUrl = `${origin}/src/pages/admin.html`;
+
+        const waMsg = `🎓 *ExamGuard AI – Coaching Admin Access*\n🏛️ *Institute:* ${name}\n🔗 *Login Portal:* ${loginUrl}\n👤 *Username (ID):* ${username}\n🔑 *Password:* ${password}\n\n👉 *Instructions:* Open the link above, enter your ID and password to upload questions, create exams, and view your students' real-time results.`;
+
+        if (detailsEl) {
+          detailsEl.innerHTML = `
+            <div><strong>Institute:</strong> ${escapeHtml(name)}</div>
+            <div><strong>Login ID:</strong> <code>${escapeHtml(username)}</code></div>
+            <div><strong>Password:</strong> <code>${escapeHtml(password)}</code></div>
+            <div style="margin-top:6px; font-size:0.75rem; color:#94a3b8;">Copy these credentials and share them with the coaching center.</div>
+          `;
+        }
+
+        if (waCopyBtn) {
+          waCopyBtn.onclick = () => {
+            navigator.clipboard?.writeText(waMsg).then(
+              () => showToast("📲 WhatsApp message copied to clipboard!", "success"),
+              () => prompt("Copy WhatsApp message:", waMsg)
+            );
+          };
+        }
+
+        if (successBox) successBox.style.display = "block";
+
+        form.reset();
+        await loadInstitutesList();
+      } catch (err) {
+        showToast(err.message || "Failed to create coaching.", "warning");
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "➕ Create Coaching Account (खाता बनाएं)";
+        }
+      }
+    });
+  }
+
+  // Refresh button
+  qs("#btnRefreshInstitutes")?.addEventListener("click", () => {
+    loadInstitutesList();
+    showToast("Institutes list refreshed.", "info", 1500);
+  });
+
+  // Search filter
+  const searchInput = qs("#instituteSearchInput");
+  searchInput?.addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    if (!q) {
+      renderInstitutesTable(institutesDataCache);
+      return;
+    }
+    const filtered = institutesDataCache.filter(
+      (inst) =>
+        (inst.name && inst.name.toLowerCase().includes(q)) ||
+        (inst.username && inst.username.toLowerCase().includes(q)) ||
+        (inst.phone && inst.phone.toLowerCase().includes(q)) ||
+        (inst.contact_person && inst.contact_person.toLowerCase().includes(q))
+    );
+    renderInstitutesTable(filtered);
+  });
+}
+
+window.ExamGuardAdmin = {
+  copyInstituteCreds: (id) => {
+    const inst = institutesDataCache.find((item) => String(item.id) === String(id));
+    if (!inst) return;
+    const origin = window.location.origin;
+    const loginUrl = `${origin}/src/pages/admin.html`;
+    const msg = `🎓 *ExamGuard AI – Coaching Admin Access*\n🏛️ *Institute:* ${inst.name}\n🔗 *Login Portal:* ${loginUrl}\n👤 *Username / ID:* ${inst.username}\n\n👉 *Instructions:* Open the link above, enter your Username and Password to access your exam control panel, upload questions, and view student results.`;
+    navigator.clipboard?.writeText(msg).then(
+      () => showToast(`📋 Login details for "${inst.name}" copied to clipboard!`, "success"),
+      () => {
+        prompt("Copy Login Details:", msg);
+      }
+    );
+  },
+
+  resetInstitutePasswordPrompt: async (id, name) => {
+    const newPass = prompt(`Enter new password for ${name}:`);
+    if (!newPass || !newPass.trim()) return;
+    try {
+      showToast("Updating password...", "info", 1500);
+      await postJson(`/admin/institutes/${id}/reset-password`, { new_password: newPass.trim() });
+      showToast(`✅ Password reset successfully for ${name}!`, "success");
+    } catch (err) {
+      showToast(err.message, "warning");
+    }
+  },
+
+  toggleInstituteStatus: async (id) => {
+    try {
+      await patchJson(`/admin/institutes/${id}/toggle`, {});
+      showToast("Institute status updated.", "info", 1500);
+      await loadInstitutesList();
+    } catch (err) {
+      showToast(err.message, "warning");
+    }
+  },
+
+  deleteInstitutePrompt: async (id, name) => {
+    if (!confirm(`Are you sure you want to delete coaching account "${name}"? This action cannot be undone.`)) return;
+    try {
+      await apiFetch(`/admin/institutes/${id}`, { method: "DELETE", headers: authHeaders() });
+      showToast(`🗑️ Coaching "${name}" deleted.`, "info");
+      await loadInstitutesList();
+    } catch (err) {
+      showToast(err.message, "warning");
+    }
+  },
+};
 
 async function generatePins() {
   try {
@@ -2206,7 +2489,7 @@ function wireMcqStudio() {
 
   // Publish Coaching Exam Modal Handlers
   const publishModal = qs("#publishExamModal");
-  const openPubBtn = qs("#btnOpenPublishModal");
+  const openPubBtns = document.querySelectorAll("#btnOpenPublishModal, #btnQuickPublishExam, [data-open-publish-modal]");
   const closePubBtn = qs("#closePublishModal");
   const publishForm = qs("#publishExamForm");
   const successView = qs("#publishSuccessView");
@@ -2215,9 +2498,11 @@ function wireMcqStudio() {
   const whatsappBtn = qs("#pubWhatsappShareBtn");
   const previewBtn = qs("#pubOpenStudentPreview");
 
-  openPubBtn?.addEventListener("click", () => {
-    if (publishModal) publishModal.style.display = "flex";
-    if (successView) successView.style.display = "none";
+  openPubBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (publishModal) publishModal.style.display = "flex";
+      if (successView) successView.style.display = "none";
+    });
   });
 
   closePubBtn?.addEventListener("click", () => {
@@ -2435,10 +2720,95 @@ async function initializeAdminDashboard() {
   const loginCard = qs("#adminLoginCard");
   const content = qs("#adminDashboardContent");
 
+  // Wire admin login form directly inside admin dashboard initialization
+  const adminLoginForm = qs("#adminLoginForm");
+  if (adminLoginForm && !adminLoginForm.dataset.wired) {
+    adminLoginForm.dataset.wired = "true";
+    adminLoginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await handleAdminLogin(e);
+    });
+  }
+
+  const btnDemoFill = qs("#btnAdminDemoFill");
+  if (btnDemoFill && !btnDemoFill.dataset.wired) {
+    btnDemoFill.dataset.wired = "true";
+    btnDemoFill.addEventListener("click", () => {
+      const u = adminLoginForm?.querySelector('[name="username"]');
+      const p = adminLoginForm?.querySelector('[name="password"]');
+      if (u) u.value = "admin";
+      if (p) p.value = "admin123";
+    });
+  }
+
   if (!token) {
     if (loginCard) loginCard.style.display = "block";
     if (content) content.style.display = "none";
     return;
+  }
+
+  // Fetch current admin profile to determine if Super Admin or Coaching Admin
+  let profile = null;
+  try {
+    profile = await getJson("/admin/current-profile");
+    if (profile) {
+      localStorage.setItem('examguard_is_super_admin', profile.is_super_admin ? 'true' : 'false');
+      if (profile.institute_name) {
+        localStorage.setItem('examguard_institute_name', profile.institute_name);
+      } else {
+        localStorage.removeItem('examguard_institute_name');
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch current admin profile:", err);
+  }
+
+  const isSuperAdmin = profile ? profile.is_super_admin : (localStorage.getItem("examguard_is_super_admin") === "true");
+  const instituteName = profile?.institute_name || localStorage.getItem("examguard_institute_name");
+
+  // Update topbar badges & portal state
+  const userPill = qs("[data-admin-user-pill]");
+  const instPill = qs("#instituteBadgePill");
+  const instPillText = qs("#instituteBadgeText");
+  const welcomeBanner = qs("#coachingWelcomeBanner");
+  const bannerCoachingName = qs("#bannerCoachingName");
+
+  if (isSuperAdmin) {
+    if (userPill) userPill.textContent = "Admin: Super Admin (Master)";
+    if (instPill) instPill.style.display = "none";
+    if (welcomeBanner) welcomeBanner.style.display = "none";
+    const tabInstitutesBtn = qs("#tabBtnInstitutes");
+    if (tabInstitutesBtn) tabInstitutesBtn.style.display = "inline-flex";
+
+    const pubCoachingInput = qs("#pubCoachingName");
+    if (pubCoachingInput) {
+      pubCoachingInput.readOnly = false;
+      pubCoachingInput.style.background = "";
+      pubCoachingInput.style.borderColor = "";
+      pubCoachingInput.title = "";
+    }
+  } else if (instituteName) {
+    if (userPill) userPill.textContent = `Coaching: ${instituteName}`;
+    if (instPill) {
+      instPill.style.display = "inline-flex";
+      if (instPillText) instPillText.textContent = `🏛️ ${instituteName}`;
+    }
+    if (welcomeBanner) {
+      welcomeBanner.style.display = "block";
+      if (bannerCoachingName) bannerCoachingName.textContent = instituteName;
+    }
+    const tabInstitutesBtn = qs("#tabBtnInstitutes");
+    if (tabInstitutesBtn) tabInstitutesBtn.style.display = "none";
+
+    // Auto-lock Coaching field in publish exam modal
+    const pubCoachingInput = qs("#pubCoachingName");
+    if (pubCoachingInput) {
+      pubCoachingInput.value = instituteName;
+      pubCoachingInput.readOnly = true;
+      pubCoachingInput.style.background = "rgba(16, 185, 129, 0.1)";
+      pubCoachingInput.style.borderColor = "rgba(16, 185, 129, 0.4)";
+      pubCoachingInput.title = `Locked to your registered coaching: ${instituteName}`;
+    }
   }
 
   if (loginCard) loginCard.style.display = "none";
@@ -2446,21 +2816,31 @@ async function initializeAdminDashboard() {
 
   qs("#createMcqForm")?.addEventListener("submit", handleCreateMcq);
   wireMcqStudio();
+  wireInstituteManagement();
 
-  await Promise.all([
+  const loadTasks = [
     loadStudentsList(),
     loadContestSchedule(),
     loadCodingProblem(),
     loadExamHistory(),
     loadAdminMcqs(),
     loadCoachingSubmissions(),
-  ]);
+  ];
+
+  if (isSuperAdmin) {
+    loadTasks.push(loadInstitutesList());
+  }
+
+  await Promise.all(loadTasks);
 
   // Periodic auto-refresh for live candidate submissions
   if (!window._coachingSubmissionsPoller) {
     window._coachingSubmissionsPoller = setInterval(() => {
       loadCoachingSubmissions();
       loadStudentsList();
+      if (localStorage.getItem("examguard_is_super_admin") === "true") {
+        loadInstitutesList();
+      }
     }, 20000);
   }
 }
@@ -2565,6 +2945,10 @@ document.addEventListener("DOMContentLoaded", () => {
     await handleStudentLogin(e);
   });
   qs("#admin-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleAdminLogin(e);
+  });
+  qs("#adminLoginForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     await handleAdminLogin(e);
   });

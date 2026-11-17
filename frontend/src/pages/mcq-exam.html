@@ -704,6 +704,15 @@
                 exam_id: examId,
               }),
             }, 4);
+            if (res.status === 409) {
+              const errData = await res.json().catch(() => ({}));
+              alert(errData.detail || "⚠️ Aapka exam pehle hi submit ho chuka hai. Duplicate attempts allowed nahi hain.");
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHtml;
+              }
+              return;
+            }
             if (!res.ok) {
               throw new Error(`HTTP ${res.status}`);
             }
@@ -725,12 +734,34 @@
         });
 
         // Start Exam Flow
-        async function startExam() {
+        async function startExam(isResumed) {
           onboardingGate.style.display = "none";
           activeExamSection.style.display = "flex";
 
           updateWatermark(studentName, studentRoll, coachingName);
           setInterval(() => updateWatermark(studentName, studentRoll, coachingName), 60000);
+
+          // 1. Fetch authoritative server session status (server-side remaining time & submit status)
+          try {
+            const token = localStorage.getItem("examguard_token");
+            if (token) {
+              const statusRes = await fetch(`${getApiBase()}/exam/session-status`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (statusRes.ok) {
+                const sData = await statusRes.json();
+                if (sData.is_submitted) {
+                  showCompletedReceipt(studentName || sData.candidate_name, studentRoll || sData.roll_no, coachingName, 0, 0);
+                  return;
+                }
+                if (typeof sData.remaining_seconds === "number") {
+                  remainingSeconds = sData.remaining_seconds;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Could not sync server session status:", e);
+          }
 
           // Request screen wake lock so phone screen does not dim or sleep
           if ("wakeLock" in navigator) {
@@ -757,10 +788,10 @@
 
           document.dispatchEvent(new Event("examguard:student-ready"));
 
-          // Start Timer
+          // Start Timer with server-validated remaining seconds
           startTimer();
 
-          // Fetch Questions
+          // Fetch Questions & Restore saved answers
           await fetchQuestions();
         }
 
@@ -779,8 +810,7 @@
               const data = await res.json();
               if (data && data.length) {
                 questions = data;
-                renderCurrentQuestion();
-                renderPalette();
+                await restoreAndSyncAnswers();
                 return;
               }
             } else {
@@ -827,8 +857,68 @@
             },
           ];
 
+          await restoreAndSyncAnswers();
+        }
+
+        // Local Storage Caching & Answer Persistence Engine
+        function saveLocalAnswers() {
+          if (!studentRoll) return;
+          try {
+            localStorage.setItem(`examguard_answers_${examId}_${studentRoll}`, JSON.stringify(selectedAnswers));
+            localStorage.setItem(`examguard_marked_${examId}_${studentRoll}`, JSON.stringify([...markedForReview]));
+            localStorage.setItem(`examguard_current_q_${examId}_${studentRoll}`, String(currentIndex));
+          } catch (_) {}
+        }
+
+        async function restoreAndSyncAnswers() {
+          // 1. Instant local restore
+          try {
+            const localSaved = localStorage.getItem(`examguard_answers_${examId}_${studentRoll}`);
+            if (localSaved) {
+              const parsed = JSON.parse(localSaved);
+              if (parsed && typeof parsed === "object") {
+                Object.assign(selectedAnswers, parsed);
+              }
+            }
+            const localMarked = localStorage.getItem(`examguard_marked_${examId}_${studentRoll}`);
+            if (localMarked) {
+              const parsedMarked = JSON.parse(localMarked);
+              if (Array.isArray(parsedMarked)) {
+                markedForReview = new Set(parsedMarked);
+              }
+            }
+            const savedIdx = localStorage.getItem(`examguard_current_q_${examId}_${studentRoll}`);
+            if (savedIdx !== null) {
+              const idx = parseInt(savedIdx, 10);
+              if (!isNaN(idx) && idx >= 0 && idx < questions.length) {
+                currentIndex = idx;
+              }
+            }
+          } catch (_) {}
+
           renderCurrentQuestion();
           renderPalette();
+
+          // 2. Safely sync and merge answers from server
+          try {
+            const token = localStorage.getItem("examguard_token");
+            if (token) {
+              const res = await fetch(`${getApiBase()}/exam/my-answers`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data && data.answers) {
+                  for (const [qIdStr, opt] of Object.entries(data.answers)) {
+                    selectedAnswers[Number(qIdStr)] = opt;
+                  }
+                  saveLocalAnswers();
+                  renderCurrentQuestion();
+                  renderPalette();
+                }
+              }
+            }
+          } catch (_) {}
         }
 
         // Render Current Question
@@ -911,6 +1001,7 @@
           const q = questions[currentIndex];
           if (!q) return;
           selectedAnswers[q.id] = canonicalLetter;
+          saveLocalAnswers();
 
           // Haptic feedback if supported
           if (navigator.vibrate) navigator.vibrate(25);
@@ -925,6 +1016,7 @@
         btnPrev.addEventListener("click", () => {
           if (currentIndex > 0) {
             currentIndex--;
+            saveLocalAnswers();
             renderCurrentQuestion();
           }
         });
@@ -932,6 +1024,7 @@
         btnNext.addEventListener("click", () => {
           if (currentIndex < questions.length - 1) {
             currentIndex++;
+            saveLocalAnswers();
             renderCurrentQuestion();
           }
         });
@@ -943,6 +1036,7 @@
           } else {
             markedForReview.add(q.id);
           }
+          saveLocalAnswers();
           renderCurrentQuestion();
         });
 
@@ -975,6 +1069,7 @@
           paletteGrid.querySelectorAll(".palette-num-btn").forEach((btn) => {
             btn.addEventListener("click", () => {
               currentIndex = parseInt(btn.dataset.qIdx, 10);
+              saveLocalAnswers();
               paletteDrawer.style.display = "none";
               renderCurrentQuestion();
             });
@@ -1034,6 +1129,51 @@
           finalizeExam();
         });
 
+        function showCompletedReceipt(name, roll, coaching, answered, total) {
+          examFinalized = true;
+          if (timerInterval) clearInterval(timerInterval);
+          window.ExamGuardMobileLockdown?.deactivate?.();
+          window.ExamGuardInvigilatorClient?.disconnect?.();
+
+          if (submissionModal) submissionModal.style.display = "none";
+          if (activeExamSection) activeExamSection.style.display = "none";
+          if (onboardingGate) onboardingGate.style.display = "none";
+
+          // Clear local cache for this completed exam
+          try {
+            localStorage.removeItem(`examguard_answers_${examId}_${roll}`);
+            localStorage.removeItem(`examguard_marked_${examId}_${roll}`);
+            localStorage.removeItem(`examguard_current_q_${examId}_${roll}`);
+          } catch (_) {}
+
+          document.body.innerHTML = `
+            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
+              <div class="exam-hero-card" style="max-width:500px;width:100%;padding:40px 24px;border:1px solid rgba(0,230,118,0.4);box-shadow:0 0 50px rgba(0,230,118,0.2);">
+                <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+                <div class="hero-shield-badge" style="border-color:#10b981;color:#34d399;">Assessment Finalized</div>
+                <h1 style="font-size:1.8rem;margin:16px 0 8px;color:#fff;">Exam Submitted Successfully</h1>
+                <p class="muted" style="font-size:0.9rem;line-height:1.5;margin-bottom:24px;">
+                  Thank you, <strong>${escapeHtml(name)}</strong> (${escapeHtml(roll)})!<br>
+                  Your proctored test responses have been securely uploaded to <strong>${escapeHtml(coaching)}</strong>.
+                </p>
+                <div style="background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin-bottom:24px;font-size:0.9rem;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                    <span class="muted">Questions Answered:</span>
+                    <strong style="color:#34d399;">${answered} ${total ? `/ ${total}` : ""}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;">
+                    <span class="muted">Verification Status:</span>
+                    <strong style="color:#00f2fe;">Proctor Verified ✓</strong>
+                  </div>
+                </div>
+                <button type="button" onclick="window.close()" class="btn-glow" style="padding:14px 28px;width:100%;">
+                  Close Exam Window
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
         // Finalize Exam
         async function finalizeExam() {
           if (examFinalized) return;
@@ -1064,43 +1204,33 @@
             } catch (_) {}
           }
 
-          window.ExamGuardMobileLockdown?.deactivate?.();
-          window.ExamGuardInvigilatorClient?.disconnect?.();
-
-          submissionModal.style.display = "none";
-          activeExamSection.style.display = "none";
-
           const total = questions.length;
           const answered = Object.keys(selectedAnswers).length;
-
-          // Replace body content with completion receipt
-          document.body.innerHTML = `
-            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
-              <div class="exam-hero-card" style="max-width:500px;width:100%;padding:40px 24px;border:1px solid rgba(0,230,118,0.4);box-shadow:0 0 50px rgba(0,230,118,0.2);">
-                <div style="font-size:48px;margin-bottom:12px;">🎉</div>
-                <div class="hero-shield-badge" style="border-color:#10b981;color:#34d399;">Assessment Finalized</div>
-                <h1 style="font-size:1.8rem;margin:16px 0 8px;color:#fff;">Exam Submitted Successfully</h1>
-                <p class="muted" style="font-size:0.9rem;line-height:1.5;margin-bottom:24px;">
-                  Thank you, <strong>${escapeHtml(studentName)}</strong> (${escapeHtml(studentRoll)})!<br>
-                  Your proctored test responses have been securely uploaded to <strong>${escapeHtml(coachingName)}</strong>.
-                </p>
-                <div style="background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin-bottom:24px;font-size:0.9rem;">
-                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                    <span class="muted">Questions Answered:</span>
-                    <strong style="color:#34d399;">${answered} / ${total}</strong>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;">
-                    <span class="muted">Verification Status:</span>
-                    <strong style="color:#00f2fe;">Proctor Verified ✓</strong>
-                  </div>
-                </div>
-                <button type="button" onclick="window.close()" class="btn-glow" style="padding:14px 28px;width:100%;">
-                  Close Exam Window
-                </button>
-              </div>
-            </div>
-          `;
+          showCompletedReceipt(studentName, studentRoll, coachingName, answered, total);
         }
+
+        // Check if candidate already has an active session or completed exam on load
+        (async function checkExistingSession() {
+          const token = localStorage.getItem("examguard_token");
+          const storedRoll = localStorage.getItem("examguard_roll_no");
+          if (!token || !storedRoll) return;
+
+          try {
+            const res = await fetch(`${getApiBase()}/exam/session-status`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.is_submitted) {
+                showCompletedReceipt(studentName || data.candidate_name, studentRoll || data.roll_no, coachingName, 0, 0);
+              } else if (data.remaining_seconds > 0) {
+                // Resume seamlessly from where the student left off
+                remainingSeconds = data.remaining_seconds;
+                startExam(true);
+              }
+            }
+          } catch (_) {}
+        })();
 
         // Tab Switch / Minimize logging for Desktop (mobile_lockdown.js already handles mobile alerts cleanly)
         document.addEventListener("visibilitychange", function () {

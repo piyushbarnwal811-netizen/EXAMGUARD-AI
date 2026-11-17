@@ -70,5 +70,25 @@ def require_role(required_role: str):
     return checker
 
 
-require_admin = require_role("admin")
+def require_admin(subject: dict[str, Any] = Depends(get_current_subject)) -> dict[str, Any]:
+    role = subject.get("role")
+    if role not in {"admin", "coaching_admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin permissions required.",
+        )
+    return subject
+
+
+def require_super_admin(subject: dict[str, Any] = Depends(get_current_subject)) -> dict[str, Any]:
+    role = subject.get("role")
+    is_super = subject.get("is_super_admin", False)
+    if role != "admin" or not is_super:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Master Administrator permissions required.",
+        )
+    return subject
+
+
 require_student = require_role("student")

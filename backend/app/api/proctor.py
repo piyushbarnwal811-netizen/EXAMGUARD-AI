@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.security import get_optional_subject
+from app.core.security import get_optional_subject, require_admin
 from app.db.models import ExamLog, ExamSession, Student
 from app.db.session import get_db
 
@@ -297,6 +297,7 @@ async def ingest_violation_log(
 async def get_candidate_session_report(
     session_id: int,
     db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
 ) -> dict[str, Any]:
     """
     Returns full candidate proctoring audit trail:
@@ -388,6 +389,7 @@ async def review_violation_action(
     violation_id: int,
     payload: ViolationReviewPayload,
     db: AsyncSession = Depends(get_db),
+    _admin: dict[str, object] = Depends(require_admin),
 ) -> dict[str, Any]:
     """
     Allows examiner to audit flagged events:

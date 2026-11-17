@@ -152,3 +152,24 @@ test("100-student deployment builds live cockpit and routes MCQ telemetry & shuf
   assert.match(adminLive, /resolveWsBase/);
   assert.match(adminLive, /scheduleRenderMatrix/);
 });
+
+test("mcq-exam implements robust answer persistence, reload recovery, and server-side timer validation", () => {
+  const mcqHtml = read("src/pages/mcq-exam.html");
+
+  assert.match(mcqHtml, /saveLocalAnswers/);
+  assert.match(mcqHtml, /restoreAndSyncAnswers/);
+  assert.match(mcqHtml, /exam\/my-answers/);
+  assert.match(mcqHtml, /exam\/session-status/);
+  assert.match(mcqHtml, /showCompletedReceipt/);
+  assert.match(mcqHtml, /checkExistingSession/);
+});
+
+test("proctor_ai triggers bilingual student alert popup and haptic feedback on secondary phone detection", () => {
+  const proctorAi = read("src/js/proctor_ai.js");
+
+  assert.match(proctorAi, /showStudentPhoneAlertPopup/);
+  assert.match(proctorAi, /examguardPhoneAlertModal/);
+  assert.match(proctorAi, /Secondary Mobile Phone Detected/);
+  assert.match(proctorAi, /navigator\.vibrate/);
+  assert.match(proctorAi, /examguard:secondary-phone-detected/);
+});

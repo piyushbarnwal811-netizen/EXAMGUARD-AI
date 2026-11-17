@@ -5,7 +5,7 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
-from app.db.models import Base, CodingContest, CodingProblem, CodingTestCase, Question
+from app.db.models import Base, CodingContest, CodingProblem, CodingTestCase, Institute, Question
 
 settings = get_settings()
 
@@ -249,6 +249,27 @@ async def _seed_coding_contest() -> None:
         await db.commit()
 
 
+async def _seed_institutes() -> None:
+    from app.core.security import hash_secret
+    async with AsyncSessionLocal() as db:
+        count = await db.scalar(select(func.count(Institute.id)))
+        if count:
+            return
+
+        target_topper = Institute(
+            name="Target Topper Classes",
+            code="TARGET-TOPPER",
+            username="targettopper",
+            password_hash=hash_secret("topper123"),
+            contact_person="Director",
+            phone="9876543210",
+            email="targettopper@example.com",
+            is_active=True,
+        )
+        db.add(target_topper)
+        await db.commit()
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -257,6 +278,7 @@ async def init_db() -> None:
         await conn.run_sync(_ensure_coding_problem_language_column)
     await _seed_questions()
     await _seed_coding_contest()
+    await _seed_institutes()
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:

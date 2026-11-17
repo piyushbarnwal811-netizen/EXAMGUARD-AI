@@ -25,6 +25,30 @@ class Base(DeclarativeBase):
     pass
 
 
+class Institute(Base):
+    __tablename__ = "institutes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(180), unique=True, nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    contact_person: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=utc_now,
+        nullable=True,
+    )
+
+
 class Student(Base):
     __tablename__ = "students"
 

@@ -853,9 +853,14 @@
             ws.send(JSON.stringify(payload));
           } else {
             // REST Fallback
+            const adminToken = localStorage.getItem("examguard_admin_token") || localStorage.getItem("examguard_token") || "";
+            const headers = { "Content-Type": "application/json" };
+            if (adminToken) {
+              headers["Authorization"] = `Bearer ${adminToken}`;
+            }
             fetch(`${resolveApiBase()}/v1/invigilator/${encodeURIComponent(examId)}/intervene`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: headers,
               body: JSON.stringify({
                 action: payload.type === "TRIGGER_AUDIO_ALERT" ? "WARN" : payload.type === "TOGGLE_SESSION_FREEZE" ? "FREEZE" : "TERMINATE",
                 sessionId: payload.sessionId,
@@ -929,7 +934,9 @@
 
         // Connect WebSocket
         function connectWs() {
-          const wsUrl = `${resolveWsBase()}/ws/invigilator/${encodeURIComponent(examId)}?role=invigilator`;
+          const adminToken = localStorage.getItem("examguard_admin_token") || localStorage.getItem("examguard_token") || "";
+          const tokenParam = adminToken ? `&token=${encodeURIComponent(adminToken)}` : "";
+          const wsUrl = `${resolveWsBase()}/ws/invigilator/${encodeURIComponent(examId)}?role=invigilator${tokenParam}`;
 
           try {
             ws = new WebSocket(wsUrl);

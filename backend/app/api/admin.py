@@ -20,12 +20,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.security import hash_secret, require_admin
+from app.core.security import hash_secret, require_admin, require_super_admin
 from app.db.models import (
     CodeSubmission,
     CodingContest,
     ExamLog,
     ExamSession,
+    Institute,
     Question,
     Response,
     Student,
@@ -34,6 +35,9 @@ from app.db.session import get_db
 from app.schemas.coding import ExamHistoryOut
 from app.schemas.student import (
     CsvUploadResult,
+    InstituteCreate,
+    InstituteOut,
+    InstituteResetPassword,
     InviteBatchResult,
     InviteFailure,
     PinGenerationResult,
@@ -1238,3 +1242,162 @@ async def export_excel_report(
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# INSTITUTES & COACHINGS MULTI-TENANCY MANAGEMENT (SUPER-ADMIN)
+# ---------------------------------------------------------------------------
+
+@router.get("/institutes", response_model=list[InstituteOut])
+async def list_institutes(
+    db: AsyncSession = Depends(get_db),
+    _super: dict[str, object] = Depends(require_super_admin),
+) -> list[InstituteOut]:
+    """Lists all registered coachings and colleges for master super-admin."""
+    result = await db.execute(select(Institute).order_by(Institute.id.desc()))
+    institutes = result.scalars().all()
+    return [
+        InstituteOut(
+            id=inst.id,
+            name=inst.name,
+            code=inst.code,
+            username=inst.username,
+            contact_person=inst.contact_person,
+            phone=inst.phone,
+            email=inst.email,
+            is_active=inst.is_active,
+            created_at=inst.created_at.strftime("%Y-%m-%d %H:%M") if inst.created_at else None,
+        )
+        for inst in institutes
+    ]
+
+
+@router.post("/institutes", response_model=InstituteOut, status_code=status.HTTP_201_CREATED)
+async def create_institute(
+    payload: InstituteCreate,
+    db: AsyncSession = Depends(get_db),
+    _super: dict[str, object] = Depends(require_super_admin),
+) -> InstituteOut:
+    """Creates a new coaching or college account with an assigned login ID & password."""
+    clean_username = payload.username.strip().lower()
+    clean_name = payload.name.strip()
+
+    # Check for duplicate username or name
+    existing = await db.execute(
+        select(Institute).where(
+            or_(
+                func.lower(Institute.username) == clean_username,
+                func.lower(Institute.name) == clean_name.lower(),
+            )
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Is naam ya username ka coaching account pehle se bana hua hai (Duplicate institute name or username).",
+        )
+
+    slug_code = re.sub(r"[^A-Za-z0-9]+", "-", clean_name).strip("-").upper()
+    institute = Institute(
+        name=clean_name,
+        code=slug_code,
+        username=clean_username,
+        password_hash=hash_secret(payload.password),
+        contact_person=payload.contact_person.strip() if payload.contact_person else None,
+        phone=payload.phone.strip() if payload.phone else None,
+        email=payload.email.strip().lower() if payload.email else None,
+        is_active=True,
+    )
+    db.add(institute)
+    await db.commit()
+    await db.refresh(institute)
+
+    return InstituteOut(
+        id=institute.id,
+        name=institute.name,
+        code=institute.code,
+        username=institute.username,
+        contact_person=institute.contact_person,
+        phone=institute.phone,
+        email=institute.email,
+        is_active=institute.is_active,
+        created_at=institute.created_at.strftime("%Y-%m-%d %H:%M") if institute.created_at else None,
+    )
+
+
+@router.patch("/institutes/{institute_id}/toggle", response_model=InstituteOut)
+async def toggle_institute_active(
+    institute_id: int,
+    db: AsyncSession = Depends(get_db),
+    _super: dict[str, object] = Depends(require_super_admin),
+) -> InstituteOut:
+    """Toggles active/inactive status for a coaching account."""
+    result = await db.execute(select(Institute).where(Institute.id == institute_id))
+    institute = result.scalar_one_or_none()
+    if not institute:
+        raise HTTPException(status_code=404, detail="Institute not found.")
+
+    institute.is_active = not institute.is_active
+    await db.commit()
+    await db.refresh(institute)
+
+    return InstituteOut(
+        id=institute.id,
+        name=institute.name,
+        code=institute.code,
+        username=institute.username,
+        contact_person=institute.contact_person,
+        phone=institute.phone,
+        email=institute.email,
+        is_active=institute.is_active,
+        created_at=institute.created_at.strftime("%Y-%m-%d %H:%M") if institute.created_at else None,
+    )
+
+
+@router.post("/institutes/{institute_id}/reset-password")
+async def reset_institute_password(
+    institute_id: int,
+    payload: InstituteResetPassword,
+    db: AsyncSession = Depends(get_db),
+    _super: dict[str, object] = Depends(require_super_admin),
+) -> dict[str, str]:
+    """Resets the password for a coaching account."""
+    result = await db.execute(select(Institute).where(Institute.id == institute_id))
+    institute = result.scalar_one_or_none()
+    if not institute:
+        raise HTTPException(status_code=404, detail="Institute not found.")
+
+    institute.password_hash = hash_secret(payload.new_password)
+    await db.commit()
+    return {"status": "success", "message": f"Password reset successfully for {institute.name}."}
+
+
+@router.delete("/institutes/{institute_id}")
+async def delete_institute(
+    institute_id: int,
+    db: AsyncSession = Depends(get_db),
+    _super: dict[str, object] = Depends(require_super_admin),
+) -> dict[str, str]:
+    """Deletes an institute account."""
+    result = await db.execute(select(Institute).where(Institute.id == institute_id))
+    institute = result.scalar_one_or_none()
+    if not institute:
+        raise HTTPException(status_code=404, detail="Institute not found.")
+
+    await db.delete(institute)
+    await db.commit()
+    return {"status": "success", "message": f"Institute {institute.name} deleted."}
+
+
+@router.get("/current-profile")
+async def get_current_admin_profile(
+    admin: dict[str, object] = Depends(require_admin),
+) -> dict[str, object]:
+    """Returns the profile and role info of the currently authenticated administrator."""
+    return {
+        "username": admin.get("sub"),
+        "role": admin.get("role"),
+        "is_super_admin": admin.get("is_super_admin", False),
+        "institute_id": admin.get("institute_id"),
+        "institute_name": admin.get("institute_name", "Institute Administration"),
+    }
