@@ -580,6 +580,11 @@
     <!-- COCKPIT JAVASCRIPT LOGIC -->
     <script>
       (function () {
+        if (!sessionStorage.getItem("examguard_admin_session") && !localStorage.getItem("examguard_admin_token")) {
+          window.location.replace("login.html?tab=admin");
+          return;
+        }
+
         const query = new URLSearchParams(window.location.search);
         const examId = query.get("examId") || query.get("exam_id") || query.get("id") || "ALL";
 

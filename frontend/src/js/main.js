@@ -361,6 +361,7 @@ async function handleAdminLogin(event) {
   try {
     const data = await postJson("/auth/admin-login", { username, password });
     saveToken(data.access_token);
+    sessionStorage.setItem('examguard_admin_session', 'true');
     localStorage.setItem('user_role', data.role || 'admin');
     localStorage.setItem('examguard_admin_token', data.access_token);
     localStorage.setItem('examguard_admin_user', username);
@@ -385,6 +386,19 @@ async function handleAdminLogin(event) {
   } catch (error) {
     setStatus(error.message || "Invalid admin credentials.", "warning");
   }
+}
+
+function handleAdminLogout() {
+  sessionStorage.removeItem("examguard_admin_session");
+  localStorage.removeItem("examguard_admin_token");
+  localStorage.removeItem("adminToken");
+  localStorage.removeItem("examguard_token");
+  localStorage.removeItem("token");
+  localStorage.removeItem("user_role");
+  localStorage.removeItem("examguard_admin_user");
+  localStorage.removeItem("examguard_is_super_admin");
+  localStorage.removeItem("examguard_institute_name");
+  window.location.href = "login.html?tab=admin";
 }
 
 const mcqState = {
@@ -2716,9 +2730,19 @@ function wireCoachingStudentGate() {
 
 async function initializeAdminDashboard() {
   if (!qs("#adminLoginForm") && !qs("#adminDashboardContent")) return;
-  const token = getToken();
   const loginCard = qs("#adminLoginCard");
   const content = qs("#adminDashboardContent");
+
+  // Enforce session login: Every time the browser is newly opened, require login
+  const hasActiveSession = sessionStorage.getItem("examguard_admin_session") === "true";
+  if (!hasActiveSession) {
+    localStorage.removeItem("examguard_admin_token");
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("examguard_token");
+    localStorage.removeItem("token");
+  }
+
+  const token = getToken();
 
   // Wire admin login form directly inside admin dashboard initialization
   const adminLoginForm = qs("#adminLoginForm");
@@ -2730,18 +2754,13 @@ async function initializeAdminDashboard() {
     });
   }
 
-  const btnDemoFill = qs("#btnAdminDemoFill");
-  if (btnDemoFill && !btnDemoFill.dataset.wired) {
-    btnDemoFill.dataset.wired = "true";
-    btnDemoFill.addEventListener("click", () => {
-      const u = adminLoginForm?.querySelector('[name="username"]');
-      const p = adminLoginForm?.querySelector('[name="password"]');
-      if (u) u.value = "piyushbarnwal811@gmail.com";
-      if (p) p.value = "piyush@123";
-    });
-  }
-
-  if (!token) {
+  if (!token || !hasActiveSession) {
+    if (adminLoginForm) {
+      const u = adminLoginForm.querySelector('[name="username"]');
+      const p = adminLoginForm.querySelector('[name="password"]');
+      if (u) u.value = "";
+      if (p) p.value = "";
+    }
     if (loginCard) loginCard.style.display = "block";
     if (content) content.style.display = "none";
     return;
@@ -2952,6 +2971,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     await handleAdminLogin(e);
   });
+  qs("#adminLogoutBtn")?.addEventListener("click", handleAdminLogout);
   qs("#csvUploadForm")?.addEventListener("submit", async (event) => {
     try {
       await uploadCsv(event);

@@ -8,7 +8,9 @@
       (function () {
         const p = new URLSearchParams(window.location.search);
         if (p.get("coaching") || p.get("exam_id")) {
-          window.location.replace("/src/pages/mcq-exam.html" + window.location.search);
+          window.location.replace("src/pages/mcq-exam.html" + window.location.search);
+        } else {
+          window.location.replace("src/pages/login.html" + window.location.search);
         }
       })();
     </script>

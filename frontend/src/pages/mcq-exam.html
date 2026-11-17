@@ -1132,8 +1132,21 @@
         function showCompletedReceipt(name, roll, coaching, answered, total) {
           examFinalized = true;
           if (timerInterval) clearInterval(timerInterval);
-          window.ExamGuardMobileLockdown?.deactivate?.();
-          window.ExamGuardInvigilatorClient?.disconnect?.();
+          window.onbeforeunload = null;
+          try {
+            window.dispatchEvent(new CustomEvent("examguard:exam-submitted"));
+            window.ExamGuardLockdown?.markSubmitted?.();
+            window.ExamGuardMobileLockdown?.deactivate?.();
+            window.ExamGuardInvigilatorClient?.disconnect?.();
+          } catch (_) {}
+
+          // Release fullscreen and pointer lock
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+          if (document.exitPointerLock) {
+            try { document.exitPointerLock(); } catch (_) {}
+          }
 
           if (submissionModal) submissionModal.style.display = "none";
           if (activeExamSection) activeExamSection.style.display = "none";
@@ -1144,11 +1157,14 @@
             localStorage.removeItem(`examguard_answers_${examId}_${roll}`);
             localStorage.removeItem(`examguard_marked_${examId}_${roll}`);
             localStorage.removeItem(`examguard_current_q_${examId}_${roll}`);
+            localStorage.removeItem("examguard_token");
+            localStorage.removeItem("token");
+            localStorage.removeItem("examguard_session_id");
           } catch (_) {}
 
           document.body.innerHTML = `
             <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
-              <div class="exam-hero-card" style="max-width:500px;width:100%;padding:40px 24px;border:1px solid rgba(0,230,118,0.4);box-shadow:0 0 50px rgba(0,230,118,0.2);">
+              <div class="exam-hero-card" style="max-width:520px;width:100%;padding:40px 24px;border:1px solid rgba(0,230,118,0.4);box-shadow:0 0 50px rgba(0,230,118,0.2);">
                 <div style="font-size:48px;margin-bottom:12px;">🎉</div>
                 <div class="hero-shield-badge" style="border-color:#10b981;color:#34d399;">Assessment Finalized</div>
                 <h1 style="font-size:1.8rem;margin:16px 0 8px;color:#fff;">Exam Submitted Successfully</h1>
@@ -1166,12 +1182,49 @@
                     <strong style="color:#00f2fe;">Proctor Verified ✓</strong>
                   </div>
                 </div>
-                <button type="button" onclick="window.close()" class="btn-glow" style="padding:14px 28px;width:100%;">
-                  Close Exam Window
-                </button>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                  <button type="button" id="btnExitExamBrowser" class="btn-glow" style="padding:14px 28px;width:100%;font-size:1rem;font-weight:700;">
+                    🚪 Exit Exam Browser (परीक्षा से बाहर निकलें)
+                  </button>
+                  <a href="../../index.html" class="button button-secondary" style="padding:12px 24px;width:100%;text-align:center;text-decoration:none;font-size:0.95rem;">
+                    🏠 Return to Home (मुख्य पृष्ठ पर जाएं)
+                  </a>
+                </div>
+                <p style="margin-top:16px;font-size:0.82rem;color:#94a3b8;line-height:1.4;">
+                  Tip: If your browser blocks auto-closing tabs, click <strong>Return to Home</strong> or close this tab manually.
+                  <br><span style="font-size:0.78rem;">(यदि ब्राउज़र टैब को स्वतः बंद नहीं होने देता, तो Return to Home पर क्लिक करें या टैब बंद करें।)</span>
+                </p>
               </div>
             </div>
           `;
+
+          // Handle clean browser exit
+          const exitBtn = document.getElementById("btnExitExamBrowser");
+          if (exitBtn) {
+            exitBtn.addEventListener("click", function () {
+              window.onbeforeunload = null;
+              try {
+                window.ExamGuardMobileLockdown?.deactivate?.();
+                window.ExamGuardLockdown?.markSubmitted?.();
+              } catch (_) {}
+              if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+              }
+              // Try SEB quit protocol first
+              try {
+                window.location.href = "seb://quit";
+              } catch (_) {}
+              // Try standard window close
+              try {
+                window.open("", "_self", "");
+                window.close();
+              } catch (_) {}
+              // Fallback redirect if browser prevents script-closing tab
+              setTimeout(() => {
+                window.location.replace("../../index.html");
+              }, 300);
+            });
+          }
         }
 
         // Finalize Exam

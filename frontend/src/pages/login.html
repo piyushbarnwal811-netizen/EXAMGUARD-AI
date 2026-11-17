@@ -95,24 +95,16 @@
 
           <label>
             Admin Email or Coaching Login ID
-            <input name="username" type="text" value="piyushbarnwal811@gmail.com" placeholder="piyushbarnwal811@gmail.com or targettopper" required autocomplete="username" />
+            <input name="username" type="text" value="" placeholder="Email ID or Coaching Username" required autocomplete="username" />
           </label>
           <label>
             Password
-            <input name="password" type="password" value="piyush@123" placeholder="••••••••" required autocomplete="current-password" />
+            <input name="password" type="password" value="" placeholder="••••••••" required autocomplete="current-password" />
           </label>
           
-          <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
-            <button type="submit" class="btn-glow" style="flex: 2; min-width: 160px;">
-              Sign In to Dashboard
-            </button>
-            <button type="button" class="button-secondary btn-sm" id="btnFillDemo" style="flex: 1; min-height: 46px;" title="Fill Super Admin credentials (piyushbarnwal811@gmail.com / piyush@123)">
-              ⚡ Master
-            </button>
-            <button type="button" class="button-secondary btn-sm" id="btnFillCoachingDemo" style="flex: 1; min-height: 46px;" title="Fill Target Topper Classes credentials">
-              🏫 Coaching
-            </button>
-          </div>
+          <button type="submit" class="btn-glow" style="width: 100%; margin-top: 10px; padding: 13px;">
+            Sign In to Dashboard
+          </button>
         </form>
 
         <p class="status" data-status style="margin-top: 20px;">Waiting for credentials verification.</p>
@@ -121,18 +113,14 @@
 
     <script src="../js/main.js"></script>
     <script>
-      document.getElementById("btnFillDemo")?.addEventListener("click", () => {
-        const emailInput = document.querySelector("#admin-form input[name='username']") || document.querySelector("#admin-form input[name='email']");
-        const passInput = document.querySelector("#admin-form input[name='password']");
-        if (emailInput) emailInput.value = "piyushbarnwal811@gmail.com";
-        if (passInput) passInput.value = "piyush@123";
-      });
-      document.getElementById("btnFillCoachingDemo")?.addEventListener("click", () => {
-        const emailInput = document.querySelector("#admin-form input[name='username']") || document.querySelector("#admin-form input[name='email']");
-        const passInput = document.querySelector("#admin-form input[name='password']");
-        if (emailInput) emailInput.value = "targettopper";
-        if (passInput) passInput.value = "topper123";
-      });
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get("tab") || (params.get("role") === "admin" ? "admin" : null);
+        if (tab) {
+          const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+          if (btn) btn.click();
+        }
+      })();
     </script>
   </body>
 </html>
